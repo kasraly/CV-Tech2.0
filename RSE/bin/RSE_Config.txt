@@ -1,0 +1,9 @@
+SenderID,10029,
+SenderType,0,
+DemoPhase,0,
+Controller_IP,192.168.0.79,
+Controller_SNMP_Port,161,
+Controller_Broadcast_Port,6053,
+Server_Port,8008,
+
+

@@ -13,6 +13,8 @@
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
 
+// testing Git
+
 GPSData gpsData;
 int gpsSockFd;
 char gpsAddr[] = "127.0.0.1";

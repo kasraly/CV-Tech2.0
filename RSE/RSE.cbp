@@ -31,14 +31,13 @@
 		<Compiler>
 			<Add option="-Wall" />
 		</Compiler>
-		<Unit filename="CVTechMessages_7.1.h" />
+		<Unit filename="ControllerLib.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="ControllerLib.h" />
 		<Unit filename="RSE.c">
 			<Option compilerVar="CC" />
 		</Unit>
-		<Unit filename="SPaTLib.c">
-			<Option compilerVar="CC" />
-		</Unit>
-		<Unit filename="SPaTLib.h" />
 		<Unit filename="gpsc_probe.c">
 			<Option compilerVar="CC" />
 		</Unit>

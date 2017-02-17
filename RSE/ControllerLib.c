@@ -1,4 +1,4 @@
-#include "SPaTLib.h"
+#include "ControllerLib.h"
 
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -27,6 +27,7 @@
 #define phaseStatusGroupPhaseNexts_1 "1.3.6.1.4.1.1206.4.2.1.1.4.1.11.1"
 #define phaseStatusGroupPhaseNexts_2 "1.3.6.1.4.1.1206.4.2.1.1.4.1.11.2"
 
+#define SPAT_PHASES 8
 
 
 int phaseLength[SPAT_PHASES][3];
@@ -260,7 +261,7 @@ int signalPreempt(unsigned char preemptPhase)
         return 1;
 }
 
-int initController(void)
+int initController(char *controllerIP, uint16_t controllerSnmpPort)
 {
     snmp_sess_init( &session );                   /* set up defaults */
     session.peername = malloc(24*sizeof(char));
@@ -364,7 +365,7 @@ int closeController()
     return 0;
 }
 
-int readSPaT(struct Message* dsrcmp, double currentTime)
+int readSPaT(SPAT_t * spat, double currentTime)
 {
     int currentPhaseTiming[SPAT_PHASES];
     int currentPhaseStatus[SPAT_PHASES];
@@ -563,29 +564,29 @@ int readSPaT(struct Message* dsrcmp, double currentTime)
 
             if (allRedPhase[i] == 1)
             {
-                dsrcmp->PhaseTiming[i] = remainingPhaseTiming[i];
+                //dsrcmp->PhaseTiming[i] = remainingPhaseTiming[i];
             }
             else
             {
                 if ((currentPhaseTiming[i] <= 30) & (currentPhaseTiming[i] != previousPhaseTiming[i]))
                 {
-                    dsrcmp->PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
+                    //dsrcmp->PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
                 }
                 else
                 {
                     if ((remainingPhaseTiming[i] < 3) & (remainingPhaseTiming[i]*10 < (currentPhaseTiming[i])))
                     {
-                        dsrcmp->PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
+                        //dsrcmp->PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
                     }
                     else
                     {
-                        dsrcmp->PhaseTiming[i] = remainingPhaseTiming[i];
+                        //dsrcmp->PhaseTiming[i] = remainingPhaseTiming[i];
                     }
                 }
 
             }
 
-            dsrcmp->PhaseStatus[i] = currentPhaseStatus[i];
+            //dsrcmp->PhaseStatus[i] = currentPhaseStatus[i];
             previousPhaseTiming[i] = currentPhaseTiming[i];
             //printf("Current Time %.2f, Phase #%d, controller timing %d, PhaseStatus %d, remainingPhaseTiming %.1f, PhaseLength %d, allRed %d\n",
               //      currentTime, i+1, currentPhaseTiming[i], currentPhaseStatus[i], remainingPhaseTiming[i], phaseLength[i][currentPhaseStatus[i]-1], allRedPhase[i]);
@@ -596,12 +597,12 @@ int readSPaT(struct Message* dsrcmp, double currentTime)
     printf("SPaT: \n");
     for(i=0; i<SPAT_PHASES; i++)
     {
-        printf("Phase %d, State %d, Time %d, Controller Time %d, remainingTime %d\n",
+/*        printf("Phase %d, State %d, Time %d, Controller Time %d, remainingTime %d\n",
             i+1,
             dsrcmp->PhaseStatus[i],
             dsrcmp->PhaseTiming[i],
             currentPhaseTiming[i],
-            (int)remainingPhaseTiming[i]);
+            (int)remainingPhaseTiming[i]);*/
     }
 
 
@@ -672,7 +673,7 @@ int readSPaT(struct Message* dsrcmp, double currentTime)
 }*/
 
 
-void parseControllerSPaTBroadcast(unsigned char *buffer, struct Message *dsrcmp)
+void parseControllerSPaTBroadcast(unsigned char *buffer, SPAT_t *spat)
 {
     int i;
     uint16_t *greenState;
@@ -685,9 +686,9 @@ void parseControllerSPaTBroadcast(unsigned char *buffer, struct Message *dsrcmp)
 
     for(i=0; i<SPAT_PHASES; i++)
     {
-        dsrcmp->PhaseStatus[i] = ((*greenState & (0x01<<i))>0)*1 + ((*yellowState & (0x01<<i))>0)*2 + ((*redState & (0x01<<i))>0)*3;
+        //dsrcmp->PhaseStatus[i] = ((*greenState & (0x01<<i))>0)*1 + ((*yellowState & (0x01<<i))>0)*2 + ((*redState & (0x01<<i))>0)*3;
 
-        dsrcmp->PhaseTiming[i] = (0x100*buffer[13*i+3] + buffer[13*i+4])/10.0;
+        //dsrcmp->PhaseTiming[i] = (0x100*buffer[13*i+3] + buffer[13*i+4])/10.0;
         //dsrcmp->PhaseTiming[i] = *(uint16_t *)(&buffer[13*i+3])/10.0;
     }
     if (0)

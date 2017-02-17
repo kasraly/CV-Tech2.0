@@ -1,67 +1,57 @@
 #define _GNU_SOURCE
 
-#include "SPaTLib.h"
 #include "gpsc_probe.h"
 #include "wave.h"
-#include "CVTechMessages_7.1.h"
-#include <stdio.h>
-#include <stdlib.h>
-//#include <sys/socket.h>
+#include "asnwave.h"
+#include "SPAT.h"
+#include "SignalRequestMsg.h"
+#include "ProbeDataManagement.h"
 
-#define BUFFER_SIZE 1024
-
-#define MIN_INTERVAL 0.01 //seconds
-#define DSRC_BROADCAST_INTERVAL 0.1 //seconds
-#define TMC_BROADCAST_INTERVAL 0 //seconds
+#include "ControllerLib.h"
+#define MIN_INTERVAL 0.1 //seconds
+#define TIME_STEP 1 //seconds
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
 
-uint16_t serverPort = 8008;
-
-struct sockaddr_in server_addr;
-int server_socket_fd;
-
-
-#undef DEMO_MODE
-
-char gpsAddr[] = "127.0.0.1";
-
-/*
-#define MAX_OIDS 8
-struct oid
-{
-    char Name[32];
-    oid Oid[MAX_OID_LEN];
-    int OidLen;
-} oids[MAX_OIDS];*/
-
-static uint64_t packets;
-static uint64_t drops = 0;
-static int pid;
-int notxpkts = 0;
-int IPdelay = 1000;
-
-static WMEApplicationRequest entryTx;
-static WMEApplicationRequest entryRx;
-static WMETARequest tareq;
-static WSMRequest wsmreq;
-
-struct Message dsrcm;
-struct Message dsrcmRx;
-uint16_t dsrcmLen = sizeof(struct Message);
-
 GPSData gpsData;
 int gpsSockFd;
+char gpsAddr[] = "127.0.0.1";
 
-int txWSMPPkts(int); /* Function to Transmit the WSMP packets */
-/* Signal Handling Functions */
+char controllerIP[32] = "192.168.0.79";
+uint16_t controllerSnmpPort = 161;
+uint16_t controllerBroadcastPort = 6053;
+
+static int pid;
+static WMEApplicationRequest entryRx;
+static WMEApplicationRequest entryTx;
+static WMEApplicationRequest wreqTx;
+static WSMRequest wsmreqTx;
+
+static uint64_t packetsTx = 0;
+static uint64_t dropsTx = 0;
+int notxpkts = 0;
+int countTx = 0;
+int countRx = 0;
+
+/* Callback function declarations */
+void 	receiveWME_NotifIndication(WMENotificationIndication *wmeindication);
+void 	receiveWRSS_Indication(WMEWRSSRequestIndication *wrssindication);
+void 	receiveTsfTimerIndication(TSFTimer *timer);
+int	confirmBeforeJoin(WMEApplicationIndication *); /* Callback function to join with the Tx application */
+
+/* Function Declarations */
+int buildPSTEntry();
+int buildUSTEntry();
+int buildWSMRequestPacket();
+int buildWMEApplicationRequest();
+
+int buildSRMPacket();
+int buildSPATPacket();
+
 void sig_int(void);
 void sig_term(void);
-void initSocket();
-void initDsrc();
-void initDsrcMessage(struct Message*);
 void closeAll(void);
-void parseTmcMessage(struct Message*, struct Message*);
+void initDsrc();
 int readConfig(void);
 
 int main()
@@ -69,117 +59,51 @@ int main()
     printf("Start \n");
 
     int rx_ret = 0;
-//    WSMIndication rxpkt;
-
-    initDsrcMessage(&dsrcm); // Initialize the DSRC message to zeros
-
-    readConfig();
-
-    initController();
-
-    initDsrc(); // initialize the DSRC channels and invoke the drivers for sending and recieving
-
-    //initSocket(); // initialize socket for communication with TMC and recieving the controller SPaT broadcast.
-
-    printf("Initialized socket\n");
-
-    gpsSockFd = gpsc_connect(gpsAddr);
-
-    printf("created GPS socket\n");
+    WSMMessage rxmsg;
+    WSMIndication rxpkt;
+    rxmsg.wsmIndication = &rxpkt;
 
 
-    /* Call the Transmit function to Tx WSMP packets,
-    there is an infinite loop in this function and program will not pass the next line (unless the loop paramters are changed)*/
-    int ret = 0, count = 0;
     struct timeval currentTimeTV;
     double previousTime, currentTime;
-    /* catch control-c and kill signal*/
-    signal(SIGINT,(void *)sig_int);
-    signal(SIGTERM,(void *)sig_term);
 
-    //get the device time to calculate the transmit intreval
-    gettimeofday(&currentTimeTV, NULL);
-    currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
-    previousTime = floor(currentTime/DSRC_BROADCAST_INTERVAL) * DSRC_BROADCAST_INTERVAL;
-
-    //double preemptTime = previousTime;
-    //unsigned char preemptPhase = 0;
-
-    while (1)
+    // Initializations:
     {
-        static int tmcIntervalCounter = 0;
-        static int dsrcIntervalCounter = 0;
-        static int spatReadCounter = 0;
+        pid = getpid();
 
-        // check whether there is new packet recieved from TMC
-/*        struct timeval socketCheckTimout = {0,1};
-        fd_set server_rfds;
-        FD_ZERO(&server_rfds);
-        FD_SET(server_socket_fd, &server_rfds);
-        retval = select(server_socket_fd + 1, &server_rfds, NULL, NULL, &socketCheckTimout);
-        if (retval > 0) // if there is packet available from TMC, read the socket and process the packet
-        {
-            printf("TMC message \n");
-            socklen_t server_addr_length = sizeof(server_addr);
-            struct Message buffer;
-            recvfrom(server_socket_fd, &buffer, sizeof(buffer),0,(struct sockaddr*)&server_addr, &server_addr_length);
-            parseTmcMessage(&buffer, &dsrcm);
-            // send some response to TMC
-            sendto(server_socket_fd, &dsrcm, sizeof(dsrcm),0, (struct sockaddr*)&server_addr, server_addr_length);
-        }*/
+        readConfig();
 
+        initDsrc(); // initialize the DSRC channels and invoke the drivers for sending and recieving
+
+        initController(controllerIP, controllerSnmpPort);
+
+        gpsSockFd = gpsc_connect(gpsAddr);
+        printf("created GPS socket\n");
 
         gettimeofday(&currentTimeTV, NULL);
         currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
+        previousTime = floor(currentTime/TIME_STEP) * TIME_STEP;
 
-/*        if ((currentTime - preemptTime) >= 60)
-        {
-            preemptTime = currentTime;
-            if (preemptPhase)
-                preemptPhase = 0;
-            else
-                preemptPhase = 0x88;
-        }*/
+        /* catch control-c and kill signal*/
+        signal(SIGINT,(void *)sig_int);
+        signal(SIGTERM,(void *)sig_term);
 
+    }
+
+
+    while (1) //infinite loop
+    {
+        static int counter = 0;
+        gettimeofday(&currentTimeTV, NULL);
+        currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
         if ((currentTime - previousTime) >= MIN_INTERVAL) // check if enough time is passed to broadcast new message
         {
             previousTime = previousTime + MIN_INTERVAL;
-
-            tmcIntervalCounter++;
-            dsrcIntervalCounter++;
-            spatReadCounter++;
-
-            if (spatReadCounter >= (int)(SPaT_READ_INTERVAL/MIN_INTERVAL))
+            counter ++;
+            if (counter >= (int)(TIME_STEP/MIN_INTERVAL))
             {
-                //printf("\nsystem Time: %.1f, Calling Preempt Function\n",currentTime);
-                //signalPreempt(preemptPhase);
-
-                printf("\nsystem Time: %f, Time to Check Controller status\n",currentTime);
-                spatReadCounter = 0;
-                if (dsrcm.DemoPhase > 0)
-                {
-                    printf("Reding SPaT from Controller, DemoPhase is %d\n",dsrcm.DemoPhase);
-                    readSPaT(&dsrcm, currentTime);
-                }
-                else
-                {
-                    printf("Controller not present, DemoPhase is %d\n",dsrcm.DemoPhase);
-                }
-
-            }
-
-            if (dsrcIntervalCounter >= (int)(DSRC_BROADCAST_INTERVAL/MIN_INTERVAL))
-            {
-                printf("\v\nSystem Time: %f, Time to Broadcast DSRC message\n",currentTime);
-                dsrcIntervalCounter = 0;
-                /*
-                 * Send the Request out.
-                 */
-
-                printf("\nwriting current time to DSRC message....\n");
-
-
-                dsrcm.TimeStamp = currentTime;
+                counter = 0;
+                // Do the control and broadcasting tasks.
 
                 printf("\nReading GPS information....\n");
 
@@ -196,103 +120,54 @@ int main()
                     gpsData.course,
                     gpsData.speed);
 
-                if (gpsData.actual_time > 0)
+
+                buildSRMPacket();
+                //buildSPATPacket();
+
+                //send the DSRC message
+                if( txWSMPacket(pid, &wsmreqTx) < 0)
                 {
-                    dsrcm.SenderLat = gpsData.latitude;
-                    dsrcm.SenderLon = gpsData.longitude;
-                    dsrcm.SenderAlt = gpsData.altitude;
-                    dsrcm.SenderSpeed = gpsData.speed;
-                    dsrcm.SenderCourse = gpsData.course;
-                }
-                dsrcm.gpsTime = gpsData.actual_time;
-
-
-                /*printf("Packet raw:");
-                char *buff = (char *)&dsrcm;
-                int i;
-                for (i=0; i<sizeof(dsrcm); i++)
-                    printf("%x ",buff[i]);
-                printf("\n");*/
-                /*printf("packet: %f %d %d %d %d %d %d %d %d, lat %f lon %f sats:%d\n",
-                    dsrcm.TimeStamp,
-                    dsrcm.PhaseStatus[0], dsrcm.PhaseTiming[0],
-                    dsrcm.PhaseStatus[1], dsrcm.PhaseTiming[1],
-                    dsrcm.PhaseStatus[2], dsrcm.PhaseTiming[2],
-                    dsrcm.PhaseStatus[3], dsrcm.PhaseTiming[3],
-                    dsrcm.SenderLat, dsrcm.SenderLon,gpsData.numsats);*/
-
-
-                //copy the latest DSRC message in the RSE memory to wsmreq.data for broadcast
-                memcpy (wsmreq.data.contents, &dsrcm, sizeof(dsrcm));
-                wsmreq.data.length = dsrcmLen;
-
-                ret = txWSMPacket(pid, &wsmreq); //send the DSRC message
-                if( ret < 0)
-                {
-                    drops++;
+                    dropsTx++;
                 }
                 else
                 {
-                    packets++;
-                    count++;
+                    packetsTx++;
+                    countTx++;
                 }
-                if((notxpkts != 0) && (count >= notxpkts))
+
+
+                if((notxpkts != 0) && (countTx >= notxpkts))
                     break;
-//                printf("SPaT: \n");
-//                printf("State1 %d, Time1 %d\nState2 %d, Time2 %d\nState3 %d, Time3 %d\nState4 %d, Time4 %d\nState5 %d, Time5 %d\nState6 %d, Time6 %d\nState7 %d, Time7 %d\nState8 %d, Time8 %d\n",
-//                    dsrcm.PhaseStatus[0],dsrcm.PhaseTiming[0],
-//                    dsrcm.PhaseStatus[1],dsrcm.PhaseTiming[1],
-//                    dsrcm.PhaseStatus[2],dsrcm.PhaseTiming[2],
-//                    dsrcm.PhaseStatus[3],dsrcm.PhaseTiming[3],
-//                    dsrcm.PhaseStatus[4],dsrcm.PhaseTiming[4],
-//                    dsrcm.PhaseStatus[5],dsrcm.PhaseTiming[5],
-//                    dsrcm.PhaseStatus[6],dsrcm.PhaseTiming[6],
-//                    dsrcm.PhaseStatus[7],dsrcm.PhaseTiming[7]);
 
                 printf("DSRC message Transmitted #%llu#      Drop #%llu#     len #%u#\n",
-                    packets,
-                    drops,
-                    wsmreq.data.length);
+                    packetsTx,
+                    dropsTx,
+                    wsmreqTx.data.length);
             }
-
-
-            if ((TMC_BROADCAST_INTERVAL) & (tmcIntervalCounter >= (int)(TMC_BROADCAST_INTERVAL/MIN_INTERVAL)))
-            {
-                printf("\nsystem Time: %f, Time to send Mesage to TMC\n",currentTime);
-                tmcIntervalCounter = 0;
-/*                if (server_addr.sin_addr.s_addr)
-                {
-                    dsrcm.TimeStamp = currentTime;
-                    sendto(server_socket_fd, &dsrcm, sizeof(dsrcm),0, (struct sockaddr*)&server_addr, sizeof(server_addr));
-                }*/
-            }
-
-        }
-
-        if(rx_ret > 0)
-        {
-/*            memcpy(&dsrcmRx, rxpkt.data.contents, sizeof(dsrcmRx));
-            printf("Received WSMP packet: Time:%f Lat:%f Lon%f ID:%d, Packet size :%d\n",
-                dsrcmRx.TimeStamp,
-                dsrcmRx.SenderLat,
-                dsrcmRx.SenderLon,
-                dsrcmRx.SenderID,
-                rxpkt.data.length);*/
-
         }
 
         //rx_ret = rxWSMPacket(pid, &rxpkt);
+        rx_ret = rxWSMMessage(pid, &rxmsg); /* Function to receive the Data from TX application */
+        if (rx_ret > 0){
+            printf("Received WSMP Packet txpower= %d, rateindex=%d Packet No =#%d#\n", rxpkt.chaninfo.txpower, rxpkt.chaninfo.rate, countRx++);
+            rxWSMIdentity(&rxmsg,WSMMSG_SRM); //Identify the type of received Wave Short Message.
+            if (!rxmsg.decode_status) {
+                SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
+                printf("Received Signal Request Message, Mesage count %d\n\v", (int)srmRcv->msgCnt);
+                xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
+            }
+        }
+
         sched_yield();
-        //usleep(2000);
-        usleep(IPdelay);
+        usleep(1000);
     }
-    printf("\n Transmitted =  %d dropped = %llu\n",count,drops);
+    printf("\n Transmitted =  %d dropped = %llu\n",countTx,dropsTx);
+    printf("\n Recieved =  %d\n",countRx);
 
     sig_term();
 
     return 0;
 }
-
 
 /* Signal handling functions */
 /* Before killing/Termination your application,
@@ -303,59 +178,43 @@ void sig_int(void)
     closeAll();
     exit(0);
 }
-
 void sig_term(void)
 {
     closeAll();
     exit(0);
 }
-
 void closeAll(void)
 {
+    stopWBSS(pid, &wreqTx);
     removeProvider(pid, &entryTx);
     removeUser(pid, &entryRx);
-    signal(SIGINT,SIG_DFL);
-    close(server_socket_fd);
-    closeController();
+    //closeController();
     gpsc_close_sock();
-    printf("\n\nPackets Sent =  %llu\n",packets);
-    printf("Packets Dropped = %llu\n",drops);
+    signal(SIGINT,SIG_DFL);
+    printf("\n\nPackets Sent =  %llu\n",packetsTx);
+    printf("\nPackets Dropped = %llu\n",dropsTx);
     printf("localtx killed by control-C\n");
 }
 
-void initSocket()
+void receiveWME_NotifIndication(WMENotificationIndication *wmeindication)
 {
-
-    // build UDP
-    bzero(&server_addr, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    //server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
-    server_addr.sin_port = htons(serverPort);
-
-    // build socket
-    server_socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if(server_socket_fd == -1)
-    {
-        perror("Create Socket Failed:");
-        exit(1);
-    }
-
-    // binding socket
-    if(-1 == (bind(server_socket_fd,(struct sockaddr*)&server_addr,sizeof(server_addr))))
-    {
-        perror("Server Bind Failed:");
-        exit(1);
-    };
-
 }
 
-void initDsrc()
+void receiveWRSS_Indication(WMEWRSSRequestIndication *wrssindication)
 {
+    printf("WRSS recv channel %d",(u_int8_t)wrssindication->wrssreport.channel);
+    printf("WRSS recv reportt %d",(u_int8_t)wrssindication->wrssreport.wrss);
+}
 
-    pid = getpid();
+void receiveTsfTimerIndication(TSFTimer *timer)
+{
+    printf("TSF Timer: Result=%d, Timer=%llu",(u_int8_t)timer->result,(u_int64_t)timer->timer);
+}
 
-    printf("Filling Provider Service Table entry\n");
+/* Function to build the Provider Service Table Entry */
+int buildPSTEntry(void)
+{
+    //Transmitting entry
     entryTx.psid = 10;/* Provider Service IDentifier of the process.
                       you cant register 2 applications with same psid. */
     entryTx.priority = 2;
@@ -363,61 +222,163 @@ void initDsrc()
     entryTx.repeatrate = 50;
     entryTx.channelaccess = 0;
 
-    printf("Building a WSM Request Packet\n");
-    wsmreq.chaninfo.channel = entryTx.channel;
-    wsmreq.chaninfo.rate = 3;
-    wsmreq.chaninfo.txpower = 14;
-    wsmreq.version = 1;
-    wsmreq.security = 0;
-    wsmreq.psid = 10;
-    wsmreq.txpriority = 2;
-    memset(&wsmreq.data, 0, sizeof( WSMData));
-    wsmreq.data.length = dsrcmLen;
+    return 1;
+}
 
-    printf("Builing TA request\n");
-    tareq.action = TA_ADD;
-    tareq.repeatrate = 100;
-    tareq.channel = 172;
-    tareq.channelinterval = 1;
-    tareq.servicepriority = 2;
+/* Function to build the User Service Table Entry */
+int buildUSTEntry(void)
+{
+    //Receiveing entry
+    entryRx.psid = 11;
+    entryRx.userreqtype = 2;
+    entryRx.channel = 172;
+    entryRx.schaccess  = 1;
+    entryRx.schextaccess = 1;
 
-    if ( invokeWAVEDriver(0) < 0 )
-    {
+    return 1;
+}
+
+/* Function to build the WSM Request packet. */
+int buildWSMRequestPacket()
+{
+    wsmreqTx.chaninfo.channel = 172;
+    wsmreqTx.chaninfo.rate = 3;
+    wsmreqTx.chaninfo.txpower = 15;
+    wsmreqTx.version = 1;
+    wsmreqTx.security = 0;
+    wsmreqTx.psid = 10;
+    wsmreqTx.txpriority = 2;
+    memset(&wsmreqTx.data, 0, sizeof( WSMData));
+    wsmreqTx.data.length = 0;
+
+    return 1;
+}
+
+int buildSPATPacket()
+{
+    static int spatCount = 0;
+    asn_enc_rval_t rvalenc;
+    SPAT_t *spat;
+    /* SRM related information */
+    spat = (SPAT_t *) calloc(1,sizeof(SPAT_t));
+    spat->msgID.buf = (uint8_t *) calloc(1, sizeof(uint8_t)); /* allocate memory for buffer which is used to store,
+                                                              * what type of message it is
+                                                              */
+    spat->msgID.size = sizeof(uint8_t);
+    spat->msgID.buf[0] = DSRCmsgID_signalPhaseAndTimingMessage;
+    spatCount++;
+
+    rvalenc = der_encode_to_buffer(&asn_DEF_SPAT, spat, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
+    if (rvalenc.encoded == -1) {
+        fprintf(stderr, "Cannot encode %s: %s\n",
+                rvalenc.failed_type->name, strerror(errno));
+    } else  {
+        printf("Structure successfully encoded %d\n", rvalenc.encoded);
+        wsmreqTx.data.length = rvalenc.encoded;
+        asn_DEF_SPAT.free_struct (&asn_DEF_SPAT, spat, 0);
+    }
+
+    return 1;
+}
+
+ /* Main use of this function is we will encapsulate the SRM related info in to WSM request packet */
+int buildSRMPacket()
+{
+    static int srmCount = 0;
+    asn_enc_rval_t rvalenc;
+    SignalRequestMsg_t *srm;
+
+    /* SRM related information */
+    srm = (SignalRequestMsg_t *) calloc(1,sizeof(SignalRequestMsg_t));
+    srm->msgID.buf = (uint8_t *) calloc(1, sizeof(uint8_t)); /* allocate memory for buffer which is used to store,
+                                                              * what type of message it is
+                                                              */
+    /* DSRCmsgID_basicSafetyMessage - BSM
+     * DSRCmsgID_probeVehicleData - PVD
+     * DSRCmsgID_roadSideAlert - RSA
+     * DSRCmsgID_intersectionCollisionAlert
+     * DSRCmsgID_mapData - MAP
+     * DSRCmsgID_signalPhaseAndTimingMessage - SPAT
+     * DSRCmsgID_travelerInformation - TIM
+     * These are the available/supported SAE message format's
+     * For each type you need choose the appropriate structure
+     */
+    srm->msgID.size = sizeof(uint8_t);
+    srm->msgID.buf[0] = DSRCmsgID_signalRequestMessage; /* Choose what type of message you want to transfer */
+    srm->msgCnt = srmCount++;
+
+    rvalenc = der_encode_to_buffer(&asn_DEF_SignalRequestMsg, srm, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
+    if (rvalenc.encoded == -1) {
+        fprintf(stderr, "Cannot encode %s: %s\n",
+                rvalenc.failed_type->name, strerror(errno));
+    } else  {
+        printf("Structure successfully encoded %d\n", rvalenc.encoded);
+        wsmreqTx.data.length = rvalenc.encoded;
+        asn_DEF_SignalRequestMsg.free_struct (&asn_DEF_SignalRequestMsg, srm, 0);
+    }
+
+    return 1;
+}
+
+int  buildWMEApplicationRequest()
+{
+    wreqTx.psid = 10 ;
+    printf(" WME App Req %d \n",wreqTx.psid);
+    //strncpy(wreq.acm.contents, entry.acm.contents, OCTET_MAX_LENGTH);
+    //printf(" WME App Req %s \n",wreq.acm.contents);
+    //wreq.acm.length = entry.acm.length;
+    wreqTx.repeats = 1;
+    wreqTx.persistence = 1;
+    wreqTx.channel = 172;
+    return 1;
+}
+
+void initDsrc()
+{
+    printf("Filling Provider Service Table entry %d\n",buildPSTEntry());
+    printf("Building a WSM Request Packet %d\n", buildWSMRequestPacket());
+    printf("Building a WME Application  Request %d\n",buildWMEApplicationRequest());
+
+    /* Function invokeWAVEDevice(int type, int blockflag)/invokeWAVEDriver(int blockflag) instructs the libwave
+     * to open a connection to a wave device either on the local machine or on a remote machine.
+     * Invoke the wave device before issuing any request to the wave device.
+     * If you going to run your application on Local Device(RSU/OBU) you should call invokeWAVEDriver(int blockflag).
+     * If you going to run your application on Remote machine(Computer/laptop,etc),
+     * you should call invokeWAVEDevice(int type, int blockflag).
+     * For type = WAVEDEVICE_REMOTE, before calling invokeWAVEDevice(int type, int blockflag) make a call to API Details
+     * int setRemoteDeviceIP(char *ipaddr) to set the IP address of the remote wave device
+     */
+    if ( invokeWAVEDriver(0) < 0 ){
         printf( "Opening Failed.\n ");
         exit(-1);
-    }
-    else
-    {
+    } else {
         printf("Driver invoked\n");
     }
+    /* Registering the call back functions */
+    registerWMENotifIndication(receiveWME_NotifIndication); /* It is called when WME Notification received by application */
+    registerWRSSIndication(receiveWRSS_Indication); 	/* It is WRSS indication */
+    registertsfIndication(receiveTsfTimerIndication); 	/* Used to Indicate the Timing Synchronus Function */
 
+    /* Registering the application. You can register the application as a provider/user.
+     * Provider can transmit WSA(WBSS) packets. but user cant.
+     * In order to initiate communications on a SCH, an RSU or an OBU transmits WAVE Announcement action frames on the CCH
+     * to advertise offered services available on that SCH such a device is the initiator of a WBSS called a provider.
+     * An OBU receives the announcement on the CCH and generally establishes communications with the provider on the specified SCH,
+     * such a device is called a user.
+     */
     printf("Registering provider\n ");
-    removeProvider(pid, &entryTx);
-    if ( registerProvider( pid, &entryTx ) < 0 )
-    {
+    if ( registerProvider( pid, &entryTx ) < 0 ){
         printf("\nRegister Provider failed\n");
         removeProvider(pid, &entryTx);
         registerProvider(pid, &entryTx);
-    }
-    else
-    {
+    } else {
         printf("provider registered with PSID = %u\n",entryTx.psid );
     }
-    printf("starting TA\n");
-    if (transmitTA(&tareq) < 0)
-    {
-        printf("send TA failed\n ");
-    }
-    else
-    {
-        printf("send TA successful\n") ;
-    }
 
-/*    entryRx.psid = 10;
-    entryRx.userreqtype = 2;
-    entryRx.channel = 172;
-    entryRx.schaccess  = 0;
-    entryRx.schextaccess = 1;
+
+    printf("Filling User Service Table entry %d\n",buildUSTEntry());
+
+    registerLinkConfirm(confirmBeforeJoin); /* Registering the callback function */
 
     printf("Invoking WAVE driver \n");
 
@@ -428,46 +389,22 @@ void initDsrc()
     }
 
     printf("Registering User %d\n", entryRx.psid);
-    if ( registerUser(pid, &entryRx) < 0)
+    int ret = registerUser(pid, &entryRx);
+    if ( ret < 0)
     {
         printf("Register User Failed \n");
         printf("Removing user if already present  %d\n", !removeUser(pid, &entryRx));
         printf("USER Registered %d with PSID =%u \n", registerUser(pid, &entryRx), entryRx.psid );
-    }*/
-}
-
-void initDsrcMessage(struct Message* dsrcmp)
-{
-    memset(dsrcmp,0,sizeof(struct Message*));
-
-    dsrcmp->DemoPhase = 0;
-
-    // ending message
-    dsrcmp->END1 = 'A'; // END1= A
-    dsrcmp->END2 = 'A'; // END2= A
-}
-
-void parseTmcMessage(struct Message* buffer, struct Message* dsrcmp)
-{
-    int i;
-
-    dsrcmp->DemoPhase = buffer->DemoPhase;
-    dsrcmp->HCW = buffer->HCW;
-    dsrcmp->CSW = buffer->CSW;
-    if (dsrcmp->CSW)
-        dsrcmp->CAS = buffer->CAS;
-    dsrcmp->ASWarning = buffer->ASWarning;
-    if (dsrcmp->ASWarning)
-        dsrcmp->VSL = buffer->VSL;
-
-    if (1)
-    {
-        unsigned char *byteBuffer = (unsigned char *)buffer;
-        printf("TMC message:");
-        for(i = 0; i<sizeof(*buffer); i++)
-            printf(" %x",byteBuffer[i]);
-        printf("\n");
     }
+    else
+        printf("USER Registered %d with PSID =%u \n", ret, entryRx.psid );
+
+}
+
+int confirmBeforeJoin(WMEApplicationIndication *appind)
+{
+    printf("\nJoin\n");
+    return 1; /* Return 0 for NOT Joining the WBSS */
 }
 
 int readConfig(void)
@@ -491,25 +428,8 @@ int readConfig(void)
     {
         char *str;
         str = strtok (line," ,");
-        if (strcasecmp(str,"SenderID")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.SenderID = atoi(str);
-            printf("SenderID is %d\n",dsrcm.SenderID);
-        }
-        else if (strcasecmp(str,"SenderType")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.SenderType = atoi(str);
-            printf("SenderType is %d\n",dsrcm.SenderType);
-        }
-        else if (strcasecmp(str,"DemoPhase")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.DemoPhase = atoi(str);
-            printf("DemoPhase is %d\n",dsrcm.DemoPhase);
-        }
-        else if (strcasecmp(str,"Latitude")==0)
+
+/*        if (strcasecmp(str,"Latitude")==0)
         {
             str = strtok (NULL," ,");
             dsrcm.SenderLat = strtod(str, NULL);
@@ -520,36 +440,6 @@ int readConfig(void)
             str = strtok (NULL," ,");
             dsrcm.SenderLon = strtod(str, NULL);
             printf("Longitude is %.6f\n",dsrcm.SenderLon);
-        }
-        else if (strcasecmp(str,"HCW")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.HCW = atoi(str);
-            printf("HCW is %d\n",dsrcm.HCW);
-        }
-        else if (strcasecmp(str,"CSW")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.CSW = atoi(str);
-            printf("CSW is %d\n",dsrcm.CSW);
-        }
-        else if (strcasecmp(str,"CAS")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.CAS = atoi(str);
-            printf("CAS is %d\n",dsrcm.CAS);
-        }
-        else if (strcasecmp(str,"ASWarning")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.ASWarning = atoi(str);
-            printf("ASWarning is %d\n",dsrcm.ASWarning);
-        }
-        else if (strcasecmp(str,"VSL")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.VSL = atoi(str);
-            printf("VSL is %d\n",dsrcm.VSL);
         }
         else if (strcasecmp(str,"Controller_IP")==0)
         {
@@ -574,9 +464,10 @@ int readConfig(void)
             str = strtok (NULL," ,");
             serverPort = atoi(str);
             printf("Server_Port is %d\n",serverPort);
-        }
+        }*/
     }
     free(line);
     fclose(configFile);
     return 0;
 }
+

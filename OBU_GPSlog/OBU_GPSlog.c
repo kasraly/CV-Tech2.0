@@ -3,25 +3,29 @@
 #include "gpsc_probe.h"
 #include "wave.h"
 #include "asnwave.h"
-#include "SPAT.h"
-#include "SignalRequestMsg.h"
-#include "ProbeDataManagement.h"
+#include "CVTechMessages_7.1.h"
 
-#include "ControllerLib.h"
 #define MIN_INTERVAL 0.1 //seconds
-#define TIME_STEP 1 //seconds
+#define TIME_STEP 0.1 //seconds
 
-#define CONFIG_FILE "/var/RSE_Config.txt"
-
-// testing Git
+#define GPS_RECORDING "/tmp/usb/gpsRecording.csv"
+#define GPS_RECORDING_BIN "/tmp/usb/gpsRecording.GPS"
 
 GPSData gpsData;
 int gpsSockFd;
 char gpsAddr[] = "127.0.0.1";
 
-char controllerIP[32] = "192.168.0.79";
-uint16_t controllerSnmpPort = 161;
-uint16_t controllerBroadcastPort = 6053;
+struct GPSRecording {
+    int GPSorRSSI;
+    GPSData gpsData;
+    double currentTime;
+    int SenderID;
+    double SenderTime;
+    double SenderGPSTime;
+    double SenderLat;
+    double SenderLon;
+    int rssi;
+};
 
 static int pid;
 static WMEApplicationRequest entryRx;
@@ -54,7 +58,7 @@ void sig_int(void);
 void sig_term(void);
 void closeAll(void);
 void initDsrc();
-int readConfig(void);
+int logDatatoFile(struct GPSRecording *);
 
 int main()
 {
@@ -73,18 +77,10 @@ int main()
     {
         pid = getpid();
 
-        readConfig();
-
         initDsrc(); // initialize the DSRC channels and invoke the drivers for sending and recieving
-
-        initController(controllerIP, controllerSnmpPort);
 
         gpsSockFd = gpsc_connect(gpsAddr);
         printf("created GPS socket\n");
-
-        gettimeofday(&currentTimeTV, NULL);
-        currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
-        previousTime = floor(currentTime/TIME_STEP) * TIME_STEP;
 
         /* catch control-c and kill signal*/
         signal(SIGINT,(void *)sig_int);
@@ -92,6 +88,86 @@ int main()
 
     }
 
+    gpsData.actual_time = 0;
+    while (gpsData.actual_time < 0)
+    {
+        sleep(1);
+        char ch = '1';
+        write(gpsSockFd,&ch,1);
+        read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
+        printf("waiting for GPS - GPSTime: %.1f\n", gpsData.actual_time);
+    }
+    sched_yield();
+    sleep(5);
+
+    //GPS recording File
+    {
+        FILE *gpsRecordFile;
+
+        if ((gpsRecordFile = fopen(GPS_RECORDING,"r")) != NULL)
+        {
+            printf("the %s file already exist, renaming the file to",GPS_RECORDING);
+            fclose(gpsRecordFile);
+            char fileName[256];
+            int i = 0;
+            sprintf(fileName, "%s.old%d", GPS_RECORDING, i);
+            while((gpsRecordFile = fopen(fileName,"r")) != NULL)
+            {
+                fclose(gpsRecordFile);
+                sprintf(fileName, "%s.old%d", GPS_RECORDING, ++i);
+            }
+            rename(GPS_RECORDING,fileName);
+            printf(" %s\n",fileName);
+        }
+
+        if ((gpsRecordFile = fopen(GPS_RECORDING,"w")) != NULL)
+        {
+            fprintf(gpsRecordFile, "GPSorRSSI, CurrentTime,GPSTime,latitude,longitude,altitude,course,speed");
+            fprintf(gpsRecordFile, ",RcvdMsgTimeStamp,RcvdMsgGPSTime,RcvdMsgLat,RcvdMsgLon,RcvdMsgAlt,RcvdMsgType,RcvdMsgID,RcvdMsgRSSi\n");
+            fclose(gpsRecordFile);
+        }
+        else
+        {
+            printf("error creating %s file\n",GPS_RECORDING);
+        }
+
+    //****************** bin file
+
+        FILE *gpsRecordBinFile;
+
+        if ((gpsRecordBinFile = fopen(GPS_RECORDING_BIN,"r")) != NULL)
+        {
+            printf("the %s file already exist, renaming the file to",GPS_RECORDING_BIN);
+            fclose(gpsRecordBinFile);
+            char fileName[256];
+            int i = 0;
+            sprintf(fileName, "%s.old%d", GPS_RECORDING_BIN, i);
+            while((gpsRecordBinFile = fopen(fileName,"r")) != NULL)
+            {
+                fclose(gpsRecordBinFile);
+                sprintf(fileName, "%s.old%d", GPS_RECORDING_BIN, ++i);
+            }
+            rename(GPS_RECORDING_BIN,fileName);
+            printf(" %s\n",fileName);
+        }
+
+        if ((gpsRecordBinFile = fopen(GPS_RECORDING_BIN,"w")) != NULL)
+        {
+            fclose(gpsRecordBinFile);
+        }
+        else
+        {
+            printf("error creating %s file\n",GPS_RECORDING_BIN);
+        }
+    }
+
+
+    struct GPSRecording gpsRec;
+    memset(&gpsRec, 0, sizeof(struct GPSRecording));
+
+    gettimeofday(&currentTimeTV, NULL);
+    currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
+    previousTime = floor(currentTime/TIME_STEP) * TIME_STEP;
 
     while (1) //infinite loop
     {
@@ -113,6 +189,12 @@ int main()
                 write(gpsSockFd,&ch,1);
                 read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
 
+                memcpy(&gpsRec.gpsData, &gpsData, sizeof(gpsData));
+                gpsRec.currentTime = currentTime;
+                gpsRec.GPSorRSSI = 1;
+
+                logDatatoFile(&gpsRec);
+
                 printf("RSE GPS Data\nTime: %.3f, GPSTime: %.1f, Lat: %.7f, Lon: %.7f\nAlt: %.1f, course: %.0f, speed, %.2f\n",
                     currentTime,
                     gpsData.actual_time,
@@ -122,29 +204,12 @@ int main()
                     gpsData.course,
                     gpsData.speed);
 
-
-                buildSRMPacket();
-                //buildSPATPacket();
-
-                //send the DSRC message
-                if( txWSMPacket(pid, &wsmreqTx) < 0)
-                {
-                    dropsTx++;
-                }
-                else
-                {
-                    packetsTx++;
-                    countTx++;
-                }
-
-
-                if((notxpkts != 0) && (countTx >= notxpkts))
-                    break;
-
-                printf("DSRC message Transmitted #%llu#      Drop #%llu#     len #%u#\n",
-                    packetsTx,
-                    dropsTx,
-                    wsmreqTx.data.length);
+                gpsRec.rssi = -1;
+                gpsRec.SenderGPSTime = -1;
+                gpsRec.SenderID = -1;
+                gpsRec.SenderLat = -1;
+                gpsRec.SenderLon = -1;
+                gpsRec.SenderTime = -1;
             }
         }
 
@@ -152,12 +217,19 @@ int main()
         rx_ret = rxWSMMessage(pid, &rxmsg); /* Function to receive the Data from TX application */
         if (rx_ret > 0){
             printf("Received WSMP Packet txpower= %d, rateindex=%d Packet No =#%d#\n", rxpkt.chaninfo.txpower, rxpkt.chaninfo.rate, countRx++);
-            rxWSMIdentity(&rxmsg,WSMMSG_SRM); //Identify the type of received Wave Short Message.
-            if (!rxmsg.decode_status) {
-                SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
-                printf("Received Signal Request Message, Mesage count %d\n\v", (int)srmRcv->msgCnt);
-                xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
-            }
+            struct Message *dsrcmp = (struct Message *)rxpkt.data.contents;
+            gpsRec.rssi = rxpkt.rssi;
+            gpsRec.SenderGPSTime = dsrcmp->gpsTime;
+            gpsRec.SenderID = dsrcmp->SenderID;
+            gpsRec.SenderLat = dsrcmp->SenderLat;
+            gpsRec.SenderLon = dsrcmp->SenderLon;
+            gpsRec.SenderTime = dsrcmp->TimeStamp;
+
+            gpsRec.currentTime = currentTime;
+            gpsRec.GPSorRSSI = 0;
+
+
+            logDatatoFile(&gpsRec);
         }
 
         sched_yield();
@@ -256,72 +328,6 @@ int buildWSMRequestPacket()
     return 1;
 }
 
-int buildSPATPacket()
-{
-    static int spatCount = 0;
-    asn_enc_rval_t rvalenc;
-    SPAT_t *spat;
-    /* SRM related information */
-    spat = (SPAT_t *) calloc(1,sizeof(SPAT_t));
-    spat->msgID.buf = (uint8_t *) calloc(1, sizeof(uint8_t)); /* allocate memory for buffer which is used to store,
-                                                              * what type of message it is
-                                                              */
-    spat->msgID.size = sizeof(uint8_t);
-    spat->msgID.buf[0] = DSRCmsgID_signalPhaseAndTimingMessage;
-    spatCount++;
-
-    rvalenc = der_encode_to_buffer(&asn_DEF_SPAT, spat, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
-    if (rvalenc.encoded == -1) {
-        fprintf(stderr, "Cannot encode %s: %s\n",
-                rvalenc.failed_type->name, strerror(errno));
-    } else  {
-        printf("Structure successfully encoded %d\n", rvalenc.encoded);
-        wsmreqTx.data.length = rvalenc.encoded;
-        asn_DEF_SPAT.free_struct (&asn_DEF_SPAT, spat, 0);
-    }
-
-    return 1;
-}
-
- /* Main use of this function is we will encapsulate the SRM related info in to WSM request packet */
-int buildSRMPacket()
-{
-    static int srmCount = 0;
-    asn_enc_rval_t rvalenc;
-    SignalRequestMsg_t *srm;
-
-    /* SRM related information */
-    srm = (SignalRequestMsg_t *) calloc(1,sizeof(SignalRequestMsg_t));
-    srm->msgID.buf = (uint8_t *) calloc(1, sizeof(uint8_t)); /* allocate memory for buffer which is used to store,
-                                                              * what type of message it is
-                                                              */
-    /* DSRCmsgID_basicSafetyMessage - BSM
-     * DSRCmsgID_probeVehicleData - PVD
-     * DSRCmsgID_roadSideAlert - RSA
-     * DSRCmsgID_intersectionCollisionAlert
-     * DSRCmsgID_mapData - MAP
-     * DSRCmsgID_signalPhaseAndTimingMessage - SPAT
-     * DSRCmsgID_travelerInformation - TIM
-     * These are the available/supported SAE message format's
-     * For each type you need choose the appropriate structure
-     */
-    srm->msgID.size = sizeof(uint8_t);
-    srm->msgID.buf[0] = DSRCmsgID_signalRequestMessage; /* Choose what type of message you want to transfer */
-    srm->msgCnt = srmCount++;
-
-    rvalenc = der_encode_to_buffer(&asn_DEF_SignalRequestMsg, srm, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
-    if (rvalenc.encoded == -1) {
-        fprintf(stderr, "Cannot encode %s: %s\n",
-                rvalenc.failed_type->name, strerror(errno));
-    } else  {
-        printf("Structure successfully encoded %d\n", rvalenc.encoded);
-        wsmreqTx.data.length = rvalenc.encoded;
-        asn_DEF_SignalRequestMsg.free_struct (&asn_DEF_SignalRequestMsg, srm, 0);
-    }
-
-    return 1;
-}
-
 int  buildWMEApplicationRequest()
 {
     wreqTx.psid = 10 ;
@@ -409,67 +415,53 @@ int confirmBeforeJoin(WMEApplicationIndication *appind)
     return 1; /* Return 0 for NOT Joining the WBSS */
 }
 
-int readConfig(void)
+int logDatatoFile(struct GPSRecording *gpsRec)
 {
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read;
-    FILE *configFile;
+    FILE *gpsRecordFileBin;
 
-    if ((configFile = fopen(CONFIG_FILE, "r")) != NULL)
+    if ((gpsRecordFileBin = fopen(GPS_RECORDING_BIN,"a")) != NULL)
     {
-        printf("file open successgful\n");
+        if (fwrite(gpsRec, sizeof(struct GPSRecording), 1, gpsRecordFileBin) <= 0)
+            printf("error appending data to %s\n",GPS_RECORDING_BIN);
+        fclose(gpsRecordFileBin);
     }
     else
     {
-        printf("error openning CONFIG_FILE for reading\n");
-        return 1;
+        printf("error openning %s for appending\n",GPS_RECORDING_BIN);
     }
 
-    while ((read = getline(&line, &len, configFile)) != -1)
+    FILE *gpsRecordFile;
+
+    if ((gpsRecordFile = fopen(GPS_RECORDING,"a")) != NULL)
     {
-        char *str;
-        str = strtok (line," ,");
+        //OBU status
+        fprintf(gpsRecordFile, "%d, %.3f,%.1f,%.8f,%.8f,%.1f,%.3f,%.3f",
+            gpsRec->GPSorRSSI,
+            gpsRec->currentTime,
+            gpsRec->gpsData.actual_time,
+            gpsRec->gpsData.latitude,
+            gpsRec->gpsData.longitude,
+            gpsRec->gpsData.altitude,
+            gpsRec->gpsData.course,
+            gpsRec->gpsData.speed);
 
-/*        if (strcasecmp(str,"Latitude")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.SenderLat = strtod(str, NULL);
-            printf("Latitude is %.6f\n",dsrcm.SenderLat);
-        }
-        else if (strcasecmp(str,"Longitude")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.SenderLon = strtod(str, NULL);
-            printf("Longitude is %.6f\n",dsrcm.SenderLon);
-        }
-        else if (strcasecmp(str,"Controller_IP")==0)
-        {
-            str = strtok (NULL," ,");
-            strcpy(controllerIP, str);
-            printf("Controller_IP is %s\n",controllerIP);
-        }
-        else if (strcasecmp(str,"Controller_SNMP_Port")==0)
-        {
-            str = strtok (NULL," ,");
-            controllerSnmpPort = atoi(str);
-            printf("Controller_SNMP_Port is %d\n",controllerSnmpPort);
-        }
-        else if (strcasecmp(str,"Controller_Broadcast_Port")==0)
-        {
-            str = strtok (NULL," ,");
-            controllerBroadcastPort = atoi(str);
-            printf("Controller_Broadcast_Port is %d\n",controllerBroadcastPort);
-        }
-        else if (strcasecmp(str,"Server_Port")==0)
-        {
-            str = strtok (NULL," ,");
-            serverPort = atoi(str);
-            printf("Server_Port is %d\n",serverPort);
-        }*/
+        //recieved message
+        fprintf(gpsRecordFile, ",%.3f,%.1f,%.8f,%.8f,%.1f,%d,%d,%d\n",
+            gpsRec->SenderTime,
+            gpsRec->SenderGPSTime,
+            gpsRec->SenderLat,
+            gpsRec->SenderLon,
+            0.,
+            0,
+            gpsRec->SenderID,
+            gpsRec->rssi);
+
+        fclose(gpsRecordFile);
     }
-    free(line);
-    fclose(configFile);
-    return 0;
-}
+    else
+    {
+        printf("error openning %s for appending\n",GPS_RECORDING);
+    }
 
+    return 1;
+}

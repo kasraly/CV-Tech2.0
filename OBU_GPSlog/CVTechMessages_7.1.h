@@ -92,8 +92,6 @@ Based on the version 5.2,
 added some additional informaton from GPS for more feature rich Pedestrian and FTC application
 
 */
-#ifndef CVTechMessages
-#define CVTechMessages
 
 #define SPAT_PHASES   8
 
@@ -169,4 +167,3 @@ struct Message
 };
 
 
-#endif

@@ -97,21 +97,21 @@ int main()
 
     }
 
-    gpsData.actual_time = 0;
-    while (gpsData.actual_time < 0)
-    {
-        sleep(1);
-        char ch = '1';
-        write(gpsSockFd,&ch,1);
-        read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
-        printf("waiting for GPS - GPSTime: %.1f\n", gpsData.actual_time);
-    }
-    sched_yield();
-    sleep(5);
-
-    //GPS recording File
     if (!offline)
     {
+        gpsData.actual_time = -1;
+        while (gpsData.actual_time < 0)
+        {
+            sleep(1);
+            char ch = '1';
+            write(gpsSockFd,&ch,1);
+            read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
+            printf("waiting for GPS - GPSTime: %.1f\n", gpsData.actual_time);
+        }
+        sched_yield();
+        sleep(5);
+
+        //GPS recording File
         FILE *gpsRecordFile;
 
         if ((gpsRecordFile = fopen(GPS_RECORDING,"r")) != NULL)
@@ -545,7 +545,10 @@ int readConfig(void)
         {
             str = strtok (NULL," ,");
             offline = atoi(str);
-            printf("Latitude status is %d\n",offline);
+            if (offline)
+                printf("GPS is in offline mode\n");
+            else
+                printf("GPS is online\n");
         }
     }
     free(line);

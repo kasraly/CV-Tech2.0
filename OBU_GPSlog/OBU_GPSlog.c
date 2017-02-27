@@ -451,7 +451,8 @@ long int read_GPS_log(GPSData* gpsDataP, long int filePos)
         fseek(gpsReadFileBin, filePos, SEEK_SET);
         while (gpsRec.GPSorRSSI != 1)
         {
-            fread((void *)&gpsRec, sizeof(struct GPSRecording), 1, gpsReadFileBin);
+            if (fread((void *)&gpsRec, sizeof(struct GPSRecording), 1, gpsReadFileBin) < 1)
+                rewind(gpsReadFileBin);
         }
         filePos = ftell(gpsReadFileBin);
         fclose(gpsReadFileBin);

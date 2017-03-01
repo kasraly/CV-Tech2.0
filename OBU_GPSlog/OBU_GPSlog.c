@@ -7,7 +7,7 @@
 #include "GPS_offline.h"
 
 #define MIN_INTERVAL 0.1 //seconds
-#define TIME_STEP 0.1 //seconds
+#define TIME_STEP 1 //seconds
 
 #define CONFIG_FILE "/var/OBU_Config.txt"
 

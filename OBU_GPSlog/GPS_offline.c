@@ -21,6 +21,7 @@ int read_GPS_log(GPSData* gpsDataP, double currentTime)
             if (fread((void *)&gpsRec, sizeof(struct GPSRecording), 1, gpsReadFileBin) < 1)
             {
                 rewind(gpsReadFileBin);
+                timeOffset = 0;
                 retval = 1;
             }
             if (gpsRec.GPSorRSSI == 1)

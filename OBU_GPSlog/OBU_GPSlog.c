@@ -225,8 +225,7 @@ int main()
 
                 if(offline)
                 {
-                    static long int filePos = 0;
-                    filePos = read_GPS_log(&gpsData, filePos);
+                    read_GPS_log(&gpsData, currentTime);
                 }
                 else
                 {

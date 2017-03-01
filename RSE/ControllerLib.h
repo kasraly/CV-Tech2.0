@@ -10,7 +10,7 @@
 
 #include "SPAT.h"
 
-#define SPaT_READ_INTERVAL 0.1 //seconds
+#define SPaT_READ_INTERVAL 1 //seconds
 
 //struct sockaddr_in controller_addr;
 int closeController(void);

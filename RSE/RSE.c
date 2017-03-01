@@ -96,11 +96,20 @@ int main()
     while (1) //infinite loop
     {
         static int counter = 0;
+        static int spatCounter = 0;
         gettimeofday(&currentTimeTV, NULL);
         currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
         if ((currentTime - previousTime) >= MIN_INTERVAL) // check if enough time is passed to broadcast new message
         {
             previousTime = previousTime + MIN_INTERVAL;
+
+            spatCounter ++;
+            if (spatCounter >= (int)(SPaT_READ_INTERVAL/MIN_INTERVAL))
+            {
+                spatCounter = 0;
+                readSPaT(0, currentTime);
+            }
+
             counter ++;
             if (counter >= (int)(TIME_STEP/MIN_INTERVAL))
             {
@@ -125,8 +134,6 @@ int main()
 
                 buildSRMPacket();
                 //buildSPATPacket();
-
-                readSPaT(0, currentTime);
 
                 //send the DSRC message
                 if( txWSMPacket(pid, &wsmreqTx) < 0)

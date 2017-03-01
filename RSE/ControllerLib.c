@@ -365,7 +365,7 @@ int closeController()
     return 0;
 }
 
-int readSPaT(SPAT_t * spat, double currentTime)
+int readSPaT(SPAT_t* spat, double currentTime)
 {
     int currentPhaseTiming[SPAT_PHASES];
     int currentPhaseStatus[SPAT_PHASES];
@@ -600,7 +600,7 @@ int readSPaT(SPAT_t * spat, double currentTime)
     printf("SPaT: \n");
     for(i=0; i<SPAT_PHASES; i++)
     {
-        printf("Phase %d, State %d, Time %d, Controller Time %d, remainingTime %d\n",
+        printf("Phase %d,\tState %d,\tTime %d,\tController Time %d,\tremainingTime %d\n",
             i+1,
             PhaseStatus[i],
             PhaseTiming[i],
@@ -675,7 +675,7 @@ int readSPaT(SPAT_t * spat, double currentTime)
     return retval;
 }*/
 
-
+/*
 void parseControllerSPaTBroadcast(unsigned char *buffer, SPAT_t *spat)
 {
     int i;
@@ -701,7 +701,7 @@ void parseControllerSPaTBroadcast(unsigned char *buffer, SPAT_t *spat)
             printf(" %x",buffer[i]);
         printf("\n");
     }
-}
+}*/
 
 void PrintData (unsigned char* data, int Size)
 {

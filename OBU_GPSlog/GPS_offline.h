@@ -1,7 +1,7 @@
 #include "gpsc_probe.h"
 
-#define GPS_RECORDING_BIN "/tmp/usb/GPSlog_23Ave.GPS"  //change this
-#define GPS_RECORDING "/tmp/usb/GPSlog_23Ave.csv"  //change this
+#define GPS_RECORDING_BIN "/tmp/usb/gpsRecording.GPS"  //change this
+#define GPS_RECORDING "/tmp/usb/gpsRecording.csv"  //change this
 #define GPS_OFFLINE_BIN "/tmp/usb/GPSlog_23Ave.GPS"
 
 struct GPSRecording {

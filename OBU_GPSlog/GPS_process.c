@@ -108,8 +108,10 @@ int main()
     gettimeofday(&currentTimeTV, NULL);
     currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
 
-    int begin = 13000;
-    int end = 14700;
+    int begin = 13000; //23 Ave
+    int end = 14700;  //23 Ave
+    begin = 7130; //Whole route
+    end = 20300; //Whole route
     int i = 0;
     while(1)
     {

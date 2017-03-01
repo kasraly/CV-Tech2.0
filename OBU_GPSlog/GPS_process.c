@@ -33,8 +33,102 @@ int main()
         pid = getpid();
     }
 
+    {
+        //GPS recording File
+        FILE *gpsRecordFile;
+
+        if ((gpsRecordFile = fopen(GPS_RECORDING,"r")) != NULL)
+        {
+            printf("the %s file already exist, renaming the file to",GPS_RECORDING);
+            fclose(gpsRecordFile);
+            char fileName[256];
+            int i = 0;
+            sprintf(fileName, "%s.old%d", GPS_RECORDING, i);
+            while((gpsRecordFile = fopen(fileName,"r")) != NULL)
+            {
+                fclose(gpsRecordFile);
+                sprintf(fileName, "%s.old%d", GPS_RECORDING, ++i);
+            }
+            rename(GPS_RECORDING,fileName);
+            printf(" %s\n",fileName);
+        }
+
+        if ((gpsRecordFile = fopen(GPS_RECORDING,"w")) != NULL)
+        {
+            fprintf(gpsRecordFile, "GPSorRSSI, CurrentTime,GPSTime,latitude,longitude,altitude,course,speed");
+            fprintf(gpsRecordFile, ",RcvdMsgTimeStamp,RcvdMsgGPSTime,RcvdMsgLat,RcvdMsgLon,RcvdMsgAlt,RcvdMsgType,RcvdMsgID,RcvdMsgRSSi\n");
+            fclose(gpsRecordFile);
+        }
+        else
+        {
+            printf("error creating %s file\n",GPS_RECORDING);
+        }
+
+    //****************** bin file
+
+        FILE *gpsRecordBinFile;
+
+        if ((gpsRecordBinFile = fopen(GPS_RECORDING_BIN,"r")) != NULL)
+        {
+            printf("the %s file already exist, renaming the file to",GPS_RECORDING_BIN);
+            fclose(gpsRecordBinFile);
+            char fileName[256];
+            int i = 0;
+            sprintf(fileName, "%s.old%d", GPS_RECORDING_BIN, i);
+            while((gpsRecordBinFile = fopen(fileName,"r")) != NULL)
+            {
+                fclose(gpsRecordBinFile);
+                sprintf(fileName, "%s.old%d", GPS_RECORDING_BIN, ++i);
+            }
+            rename(GPS_RECORDING_BIN,fileName);
+            printf(" %s\n",fileName);
+        }
+
+        if ((gpsRecordBinFile = fopen(GPS_RECORDING_BIN,"w")) != NULL)
+        {
+            fclose(gpsRecordBinFile);
+        }
+        else
+        {
+            printf("error creating %s file\n",GPS_RECORDING_BIN);
+        }
+    }
+
     struct GPSRecording gpsRec;
     memset(&gpsRec, 0, sizeof(struct GPSRecording));
+
+    gpsRec.rssi = -1;
+    gpsRec.SenderGPSTime = -1;
+    gpsRec.SenderID = -1;
+    gpsRec.SenderLat = -1;
+    gpsRec.SenderLon = -1;
+    gpsRec.SenderTime = -1;
+    gpsRec.GPSorRSSI = 1;
+
+    gettimeofday(&currentTimeTV, NULL);
+    currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
+
+    int begin = 13000;
+    int end = 14700;
+    int i = 0;
+    while(1)
+    {
+        i++;
+        currentTime += 0.1;
+        if (read_GPS_log(&gpsData, currentTime))
+            return 0;
+        memcpy(&gpsRec.gpsData, &gpsData, sizeof(gpsData));
+        gpsRec.currentTime = currentTime;
+
+        if (i >= begin)
+        {
+            logDatatoFile(&gpsRec);
+            if (i > end)
+                return 0;
+        }
+    }
+
+
 
     gettimeofday(&currentTimeTV, NULL);
     currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;

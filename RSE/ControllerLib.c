@@ -556,6 +556,8 @@ int readSPaT(SPAT_t* spat, double currentTime)
             else
             {
                 remainingPhaseTiming[i] -= SPaT_READ_INTERVAL;
+                remainingPhaseTiming[i] = remainingPhaseTiming[i]>0 ? remainingPhaseTiming[i] : 0;
+
                 if (allRedPhase[i] == 1)
                 {
                     if (currentPhaseTiming[i] > previousPhaseTiming[i])

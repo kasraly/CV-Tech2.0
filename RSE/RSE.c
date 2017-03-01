@@ -106,8 +106,28 @@ int main()
             spatCounter ++;
             if (spatCounter >= (int)(SPaT_READ_INTERVAL/MIN_INTERVAL))
             {
+                static int preempt_phase = 0x22;
                 spatCounter = 0;
                 readSPaT(0, currentTime);
+
+                if (currentTimeTV.tv_sec % 100 == 0)
+                {
+                    if (preempt_phase == 0x22)
+                        preempt_phase = 0x84;
+                    else if (preempt_phase = 0x84)
+                        preempt_phase = 0x88;
+                    else if (preempt_phase = 0x88)
+                        preempt_phase = 0x22;
+                }
+
+                if (currentTimeTV.tv_sec % 100 > 60)
+                {
+                    signalPreempt(preempt_phase);
+                }
+                else
+                {
+                    signalPreempt(0x00);
+                }
             }
 
             counter ++;

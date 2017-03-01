@@ -114,9 +114,9 @@ int main()
                 {
                     if (preempt_phase == 0x22)
                         preempt_phase = 0x48;
-                    else if (preempt_phase = 0x48)
+                    else if (preempt_phase == 0x48)
                         preempt_phase = 0x88;
-                    else if (preempt_phase = 0x88)
+                    else if (preempt_phase == 0x88)
                         preempt_phase = 0x22;
                 }
 

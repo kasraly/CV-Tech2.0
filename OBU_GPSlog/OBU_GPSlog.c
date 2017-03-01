@@ -4,33 +4,20 @@
 #include "wave.h"
 #include "asnwave.h"
 #include "CVTechMessages_7.1.h"
+#include "GPS_offline.h"
 
 #define MIN_INTERVAL 0.1 //seconds
 #define TIME_STEP 0.1 //seconds
 
-#define GPS_RECORDING "/tmp/usb/gpsRecording.csv"
-#define GPS_RECORDING_BIN "/tmp/usb/gpsRecording.GPS"
-
-#define GPS_OFFLINE_BIN "/tmp/usb/gpsRecording.GPS"
 #define CONFIG_FILE "/var/OBU_Config.txt"
-int offline = 0;
+
+int offline = 1;
+int GPSprocess = 0; //to process GPS offline should be 1
 
 
 GPSData gpsData;
 int gpsSockFd;
 char gpsAddr[] = "127.0.0.1";
-
-struct GPSRecording {
-    int GPSorRSSI;
-    GPSData gpsData;
-    double currentTime;
-    int SenderID;
-    double SenderTime;
-    double SenderGPSTime;
-    double SenderLat;
-    double SenderLon;
-    int rssi;
-};
 
 static int pid;
 static WMEApplicationRequest entryRx;
@@ -63,8 +50,6 @@ void sig_int(void);
 void sig_term(void);
 void closeAll(void);
 void initDsrc();
-long int read_GPS_log(GPSData*, long int);
-int logDatatoFile(struct GPSRecording *);
 int readConfig(void);
 
 int main()
@@ -178,6 +163,49 @@ int main()
     gettimeofday(&currentTimeTV, NULL);
     currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
     previousTime = floor(currentTime/TIME_STEP) * TIME_STEP;
+
+
+    if (GPSprocess & offline)
+    {
+        gpsRec.rssi = -1;
+        gpsRec.SenderGPSTime = -1;
+        gpsRec.SenderID = -1;
+        gpsRec.SenderLat = -1;
+        gpsRec.SenderLon = -1;
+        gpsRec.SenderTime = -1;
+        gpsRec.GPSorRSSI = 1;
+
+        gettimeofday(&currentTimeTV, NULL);
+        currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
+
+        int begin = 13000; //23 Ave
+        int end = 14700;  //23 Ave
+        begin = 7130; //Whole route
+        end = 20300; //Whole route
+        int i = 0;
+        while(1)
+        {
+            i++;
+            currentTime += 0.1;
+            if (read_GPS_log(&gpsData, currentTime))
+            {
+                closeAll();
+                return 0;
+            }
+            memcpy(&gpsRec.gpsData, &gpsData, sizeof(gpsData));
+            gpsRec.currentTime = currentTime;
+
+            if (i >= begin)
+            {
+                logDatatoFile(&gpsRec);
+                if (i > end)
+                {
+                    closeAll();
+                    return 0;
+                }
+            }
+        }
+    }
 
     while (1) //infinite loop
     {
@@ -438,86 +466,6 @@ int confirmBeforeJoin(WMEApplicationIndication *appind)
 {
     printf("\nJoin\n");
     return 1; /* Return 0 for NOT Joining the WBSS */
-}
-
-long int read_GPS_log(GPSData* gpsDataP, long int filePos)
-{
-
-    FILE *gpsReadFileBin;
-    if ((gpsReadFileBin = fopen(GPS_OFFLINE_BIN,"r")) != NULL)
-    {
-        struct GPSRecording gpsRec;
-        gpsRec.GPSorRSSI = 2;
-        fseek(gpsReadFileBin, filePos, SEEK_SET);
-        while (gpsRec.GPSorRSSI != 1)
-        {
-            if (fread((void *)&gpsRec, sizeof(struct GPSRecording), 1, gpsReadFileBin) < 1)
-                rewind(gpsReadFileBin);
-        }
-        filePos = ftell(gpsReadFileBin);
-        fclose(gpsReadFileBin);
-        memcpy((void *)gpsDataP, (void *)&gpsRec.gpsData, sizeof(GPSData));
-
-        printf("\nRead GPS binary file, currentTime: %f\n",gpsRec.currentTime);
-
-    }
-    else
-    {
-        printf("error openning %s for reading\n",GPS_OFFLINE_BIN);
-    }
-
-    return filePos;
-
-}
-int logDatatoFile(struct GPSRecording *gpsRec)
-{
-    FILE *gpsRecordFileBin;
-
-    if ((gpsRecordFileBin = fopen(GPS_RECORDING_BIN,"a")) != NULL)
-    {
-        if (fwrite(gpsRec, sizeof(struct GPSRecording), 1, gpsRecordFileBin) <= 0)
-            printf("error appending data to %s\n",GPS_RECORDING_BIN);
-        fclose(gpsRecordFileBin);
-    }
-    else
-    {
-        printf("error openning %s for appending\n",GPS_RECORDING_BIN);
-    }
-
-    FILE *gpsRecordFile;
-
-    if ((gpsRecordFile = fopen(GPS_RECORDING,"a")) != NULL)
-    {
-        //OBU status
-        fprintf(gpsRecordFile, "%d, %.3f,%.1f,%.8f,%.8f,%.1f,%.3f,%.3f",
-            gpsRec->GPSorRSSI,
-            gpsRec->currentTime,
-            gpsRec->gpsData.actual_time,
-            gpsRec->gpsData.latitude,
-            gpsRec->gpsData.longitude,
-            gpsRec->gpsData.altitude,
-            gpsRec->gpsData.course,
-            gpsRec->gpsData.speed);
-
-        //recieved message
-        fprintf(gpsRecordFile, ",%.3f,%.1f,%.8f,%.8f,%.1f,%d,%d,%d\n",
-            gpsRec->SenderTime,
-            gpsRec->SenderGPSTime,
-            gpsRec->SenderLat,
-            gpsRec->SenderLon,
-            0.,
-            0,
-            gpsRec->SenderID,
-            gpsRec->rssi);
-
-        fclose(gpsRecordFile);
-    }
-    else
-    {
-        printf("error openning %s for appending\n",GPS_RECORDING);
-    }
-
-    return 1;
 }
 
 int readConfig(void)

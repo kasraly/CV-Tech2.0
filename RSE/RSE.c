@@ -433,19 +433,7 @@ int readConfig(void)
         char *str;
         str = strtok (line," ,");
 
-/*        if (strcasecmp(str,"Latitude")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.SenderLat = strtod(str, NULL);
-            printf("Latitude is %.6f\n",dsrcm.SenderLat);
-        }
-        else if (strcasecmp(str,"Longitude")==0)
-        {
-            str = strtok (NULL," ,");
-            dsrcm.SenderLon = strtod(str, NULL);
-            printf("Longitude is %.6f\n",dsrcm.SenderLon);
-        }
-        else if (strcasecmp(str,"Controller_IP")==0)
+        if (strcasecmp(str,"Controller_IP")==0)
         {
             str = strtok (NULL," ,");
             strcpy(controllerIP, str);
@@ -462,6 +450,19 @@ int readConfig(void)
             str = strtok (NULL," ,");
             controllerBroadcastPort = atoi(str);
             printf("Controller_Broadcast_Port is %d\n",controllerBroadcastPort);
+        }
+
+/*        else if (strcasecmp(str,"Latitude")==0)
+        {
+            str = strtok (NULL," ,");
+            dsrcm.SenderLat = strtod(str, NULL);
+            printf("Latitude is %.6f\n",dsrcm.SenderLat);
+        }
+        else if (strcasecmp(str,"Longitude")==0)
+        {
+            str = strtok (NULL," ,");
+            dsrcm.SenderLon = strtod(str, NULL);
+            printf("Longitude is %.6f\n",dsrcm.SenderLon);
         }
         else if (strcasecmp(str,"Server_Port")==0)
         {

@@ -126,6 +126,8 @@ int main()
                 buildSRMPacket();
                 //buildSPATPacket();
 
+                readSPaT(0, currentTime);
+
                 //send the DSRC message
                 if( txWSMPacket(pid, &wsmreqTx) < 0)
                 {

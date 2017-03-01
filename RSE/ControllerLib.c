@@ -324,7 +324,7 @@ int initController(char *controllerIP, uint16_t controllerSnmpPort)
 
     }
 
-    phaseLength[1][0] = 40;
+/*    phaseLength[1][0] = 40;
     phaseLength[1][1] = 4;
     phaseLength[1][2] = 110 - (phaseLength[1][0] + phaseLength[1][1]);
     phaseLength[2][0] = 40;
@@ -333,7 +333,7 @@ int initController(char *controllerIP, uint16_t controllerSnmpPort)
     phaseLength[3][0] = 47;
     phaseLength[3][1] = 4;
     phaseLength[1][2] = 110 - (phaseLength[3][0] + phaseLength[3][1]);
-
+*/
 
     return 0;
 }
@@ -369,6 +369,9 @@ int readSPaT(SPAT_t * spat, double currentTime)
 {
     int currentPhaseTiming[SPAT_PHASES];
     int currentPhaseStatus[SPAT_PHASES];
+
+    int PhaseStatus[SPAT_PHASES];
+    int PhaseTiming[SPAT_PHASES];
 
     struct snmp_pdu *req, *resp;
     oid anOID[MAX_OID_LEN];
@@ -564,32 +567,32 @@ int readSPaT(SPAT_t * spat, double currentTime)
 
             if (allRedPhase[i] == 1)
             {
-                //dsrcmp->PhaseTiming[i] = remainingPhaseTiming[i];
+                PhaseTiming[i] = remainingPhaseTiming[i];
             }
             else
             {
                 if ((currentPhaseTiming[i] <= 30) & (currentPhaseTiming[i] != previousPhaseTiming[i]))
                 {
-                    //dsrcmp->PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
+                    PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
                 }
                 else
                 {
                     if ((remainingPhaseTiming[i] < 3) & (remainingPhaseTiming[i]*10 < (currentPhaseTiming[i])))
                     {
-                        //dsrcmp->PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
+                        PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
                     }
                     else
                     {
-                        //dsrcmp->PhaseTiming[i] = remainingPhaseTiming[i];
+                        PhaseTiming[i] = remainingPhaseTiming[i];
                     }
                 }
 
             }
 
-            //dsrcmp->PhaseStatus[i] = currentPhaseStatus[i];
+            PhaseStatus[i] = currentPhaseStatus[i];
             previousPhaseTiming[i] = currentPhaseTiming[i];
-            //printf("Current Time %.2f, Phase #%d, controller timing %d, PhaseStatus %d, remainingPhaseTiming %.1f, PhaseLength %d, allRed %d\n",
-              //      currentTime, i+1, currentPhaseTiming[i], currentPhaseStatus[i], remainingPhaseTiming[i], phaseLength[i][currentPhaseStatus[i]-1], allRedPhase[i]);
+//            printf("Current Time %.2f, Phase #%d, controller timing %d, PhaseStatus %d, remainingPhaseTiming %.1f, PhaseLength %d, allRed %d\n",
+//                    currentTime, i+1, currentPhaseTiming[i], currentPhaseStatus[i], remainingPhaseTiming[i], phaseLength[i][currentPhaseStatus[i]-1], allRedPhase[i]);
         }
 
     }
@@ -597,12 +600,12 @@ int readSPaT(SPAT_t * spat, double currentTime)
     printf("SPaT: \n");
     for(i=0; i<SPAT_PHASES; i++)
     {
-/*        printf("Phase %d, State %d, Time %d, Controller Time %d, remainingTime %d\n",
+        printf("Phase %d, State %d, Time %d, Controller Time %d, remainingTime %d\n",
             i+1,
-            dsrcmp->PhaseStatus[i],
-            dsrcmp->PhaseTiming[i],
+            PhaseStatus[i],
+            PhaseTiming[i],
             currentPhaseTiming[i],
-            (int)remainingPhaseTiming[i]);*/
+            (int)remainingPhaseTiming[i]);
     }
 
 

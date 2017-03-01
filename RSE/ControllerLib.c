@@ -205,7 +205,7 @@ void forceOffPhase(unsigned char phase)
 int signalPreempt(unsigned char preemptPhase)
 {
     static enum PreemptState preemptState = INACTIVE;
-    static unsigned char nextPhase = 0;
+    static unsigned char lastPhase = 0;
     static unsigned char desiredPhase = 0;
 
     switch(preemptState){
@@ -213,11 +213,11 @@ int signalPreempt(unsigned char preemptPhase)
             if (preemptPhase != 0)
             {
                 desiredPhase = preemptPhase;
-                nextPhase = getPhase(GET_PHASE_CURRENT);
-                if (nextPhase != desiredPhase)
+                lastPhase = getPhase(GET_PHASE_CURRENT);
+                if (lastPhase != desiredPhase)
                 {
                     omitPhase(~desiredPhase);
-                    forceOffPhase(nextPhase);
+                    forceOffPhase(lastPhase);
                 }
                 preemptState = TRANSITION;
             }
@@ -235,9 +235,9 @@ int signalPreempt(unsigned char preemptPhase)
         case ACTIVE:
             if (preemptPhase == 0)
             {
-                if (nextPhase != desiredPhase)
+                if (lastPhase != desiredPhase)
                 {
-                    omitPhase(~nextPhase);
+                    omitPhase(~lastPhase);
                 }
                 holdPhase(0x00);
                 //forceOffPhase(desiredPhase);
@@ -245,7 +245,7 @@ int signalPreempt(unsigned char preemptPhase)
             }
             break;
         case EXITING:
-            if (getPhase(GET_PHASE_CURRENT) == nextPhase)
+            if (getPhase(GET_PHASE_CURRENT) == lastPhase)
             {
                 omitPhase(0x00);
                 preemptState = INACTIVE;
@@ -253,7 +253,7 @@ int signalPreempt(unsigned char preemptPhase)
             break;
     }
 
-    printf("\n Pre-emption: PreemptState %d, preemptPhase %x, desiredPhase %x, nextPhase %x\n",preemptState, preemptPhase, desiredPhase, nextPhase);
+    printf("\n Pre-emption: PreemptState %d, preemptPhase %x, desiredPhase %x, lastPhase %x\n",preemptState, preemptPhase, desiredPhase, lastPhase);
 
     if (preemptState == INACTIVE)
         return 0;

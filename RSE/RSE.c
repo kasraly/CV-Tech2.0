@@ -113,8 +113,8 @@ int main()
                 if (currentTimeTV.tv_sec % 100 == 0)
                 {
                     if (preempt_phase == 0x22)
-                        preempt_phase = 0x84;
-                    else if (preempt_phase = 0x84)
+                        preempt_phase = 0x48;
+                    else if (preempt_phase = 0x48)
                         preempt_phase = 0x88;
                     else if (preempt_phase = 0x88)
                         preempt_phase = 0x22;

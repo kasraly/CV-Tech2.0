@@ -31,6 +31,10 @@
 			<Add directory="/usr/src/locomate-release/mips/lib" />
 		</Linker>
 		<Unit filename="CVTechMessages_7.1.h" />
+		<Unit filename="GPS_offline.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="GPS_offline.h" />
 		<Unit filename="OBU_GPSlog.c">
 			<Option compilerVar="CC" />
 		</Unit>

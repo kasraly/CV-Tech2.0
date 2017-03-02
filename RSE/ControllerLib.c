@@ -214,18 +214,20 @@ int signalPreempt(unsigned char preemptPhase)
             {
                 desiredPhase = preemptPhase;
                 lastPhase = getPhase(GET_PHASE_CURRENT);
-                if (lastPhase != desiredPhase)
-                {
-                    omitPhase(~desiredPhase);
-                    forceOffPhase(lastPhase);
-                }
+                omitPhase(~desiredPhase);
+                forceOffPhase(lastPhase & (~desiredPhase));
                 preemptState = TRANSITION;
             }
+/*            else
+            {
+                omitPhase(0x00);
+                holdPhase(0x00);
+            }*/
             break;
         case MIN_GREEN:
             break;
         case TRANSITION:
-            if (getPhase(GET_PHASE_CURRENT) == desiredPhase)
+            if (getPhase(GET_PHASE_CURRENT) & desiredPhase)
             {
                 holdPhase(desiredPhase);
                 omitPhase(0x00);

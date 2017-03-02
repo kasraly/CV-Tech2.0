@@ -13,15 +13,17 @@
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
 
-// testing Git
 
-GPSData gpsData;
-int gpsSockFd;
-char gpsAddr[] = "127.0.0.1";
+// params
+int intersectionID = 0;
 
 char controllerIP[32] = "192.168.0.79";
 uint16_t controllerSnmpPort = 161;
 uint16_t controllerBroadcastPort = 6053;
+
+GPSData gpsData;
+int gpsSockFd;
+char gpsAddr[] = "127.0.0.1";
 
 static int pid;
 static WMEApplicationRequest entryRx;
@@ -55,6 +57,8 @@ void sig_term(void);
 void closeAll(void);
 void initDsrc();
 int readConfig(void);
+
+int processSRM(SignalRequestMsg_t *srm, int *preemptPhase, float *preemptPhaseTime);
 
 int main()
 {
@@ -181,10 +185,8 @@ int main()
                 SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
                 printf("Received Signal Request Message, Mesage count %d\n\v", (int)srmRcv->msgCnt);
                 xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
-//****************** improve this
-                preemptPhaseTime = srmRcv->endOfService->second;
-                preemptPhase = 0x02;
-//****************
+
+                processSRM(srmRcv, &preemptPhase, &preemptPhaseTime);
             }
         }
 
@@ -437,6 +439,32 @@ int confirmBeforeJoin(WMEApplicationIndication *appind)
     return 1; /* Return 0 for NOT Joining the WBSS */
 }
 
+int processSRM(SignalRequestMsg_t *srm, int *preemptPhase, float *preemptPhaseTime)
+{
+    int preemptActive = (*preemptPhaseTime <= 0);
+    static int vehicleID = 0;
+    if (srm->request.id.buf[0] == intersectionID)
+    {
+        if (preemptActive)
+        {
+            vehicleID = srm->vehicleVIN->id->buf[0];
+            *preemptPhase = 0x04;
+            *preemptPhaseTime = srm->endOfService->second;
+
+            preemptActive = 1;
+        }
+        else
+        {
+            if (vehicleID == srm->vehicleVIN->id->buf[0])
+            {
+                *preemptPhaseTime = srm->endOfService->second;
+                preemptActive = 1;
+            }
+        }
+    }
+    return preemptActive;
+}
+
 int readConfig(void)
 {
     char *line = NULL;
@@ -476,6 +504,12 @@ int readConfig(void)
             str = strtok (NULL," ,");
             controllerBroadcastPort = atoi(str);
             printf("Controller_Broadcast_Port is %d\n",controllerBroadcastPort);
+        }
+        else if (strcasecmp(str,"intersectionID")==0)
+        {
+            str = strtok (NULL," ,");
+            intersectionID = atoi(str);
+            printf("intersectionID is %d\n",intersectionID);
         }
 
 /*        else if (strcasecmp(str,"Latitude")==0)

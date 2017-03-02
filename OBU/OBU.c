@@ -17,7 +17,7 @@
 #define MIN_INTERVAL 0.1 //seconds
 #define TIME_STEP 1 //seconds TIMER1, sending broadcast per 1 second
 #define TIMER2_MAPMATCHING 0.1 // map matching callback
-#define TIMER3_SRMGE4PRE 0.1 // message genarating
+#define TIMER3_SRMGE4PRE 1 // message genarating, per second
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
 
@@ -44,6 +44,8 @@ SignalRequestMsg_t *srm;
 double linkID_g;
 double distanceToPoint_g;
 double intersectionID_g;
+
+unsigned char  endOfServiceSecCount = 0;
 
 
 
@@ -145,6 +147,8 @@ int main()
         {
             previousTime = previousTime + MIN_INTERVAL;
             counter ++;
+            //counter2 ++;
+            counter3 ++;
 
 
             /*GPS reading*/
@@ -206,7 +210,12 @@ int main()
                 counter3 = 0;
 //                fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
 
+
+                //printf(" sending ok 11 \n");
+
                 buildSRMPacket();
+
+                printf(" sending ok \n");
 
                 //send the DSRC message
                 {
@@ -244,6 +253,15 @@ int main()
                     if (!rxmsg.decode_status) {
                         SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
                         printf("Received Signal Request Message, Mesage count %d\n\v", (int)srmRcv->msgCnt);
+                        xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
+                    }
+                }
+
+                { // used for identifying the SPAT's status
+                    rxWSMIdentity(&rxmsg,WSMMSG_SPAT); //Identify the type of received Wave Short Message.
+                    if (!rxmsg.decode_status) {
+                        SPAT_t *spatRcv = (SPAT_t *)rxmsg.structure;
+                        printf("Received Soignal Phase and Timing Message, Mesage ID %d\n\v", (int)spatRcv->msgID.buf[0]);
                         xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
                     }
                 }
@@ -403,16 +421,33 @@ int buildSRMPacket()
     {
         // request element
         {
+            // id
             srm->request.id.buf = (uint8_t *) calloc(1, sizeof(uint8_t));
             srm->request.id.size = sizeof(uint8_t);
             srm->request.id.buf[0] = 27; // just for a demo
+            // *requestedAction
+            srm->request.requestedAction = (SignalReqScheme_t *) calloc(1, sizeof(SignalReqScheme_t));
+            srm->request.requestedAction->buf = (uint8_t *) calloc(1, sizeof(uint8_t));
+            srm->request.requestedAction->size = sizeof(uint8_t);
+            srm->request.requestedAction->buf[0] = 27; // just for a demo
+
         }
 
         // endofService element
         {
+            if (endOfServiceSecCount > 59)
+            {
+                endOfServiceSecCount = 1;
+            }
+            else
+            {
+                endOfServiceSecCount++;
+            }
             // before we use it we directly allocate some memeory spaces
             srm->endOfService = (struct DTime *) calloc(1,sizeof(struct DTime));
-            srm->endOfService->second = 1; //way1, use '->' to point a member belongs to a struct pointer variable
+//            srm->endOfService->second = endOfServiceSecCount; //way1, use '->' to point a member belongs to a struct pointer variable
+            srm->endOfService->second = 5; //way1, use '->' to point a member belongs to a struct pointer
+
 
 ////      srm->endOfService.second
 //        struct DTime *endOfService_t; // way2, use use a pointer
@@ -428,13 +463,15 @@ int buildSRMPacket()
         // vehicleVin element
         {
             srm->vehicleVIN = (struct VehicleIdent*) calloc(1,sizeof(struct VehicleIdent));
+
             srm->vehicleVIN->id = (TemporaryID_t*) calloc(1,sizeof(TemporaryID_t));
 
-//            srm->vehicleVIN->id.size = sizeof(uint8_t);
-//            srm->vehicleVIN->id.buf[0] = 28; /* Choose what type of message you want to transfer */
+            srm->vehicleVIN->id->buf = (uint8_t *) calloc(1, sizeof(uint8_t)); // do not miss any pointer without memery before using
+            srm->vehicleVIN->id->size = sizeof(uint8_t);
+            srm->vehicleVIN->id->buf[0] = 28; /* Choose what type of message you want to transfer */
         }
 
-        // vehicleData->bsm_blob mannually
+//        // vehicleData->bsm_blob mannually
         {
             //predefined variables
             int j;
@@ -458,64 +495,76 @@ int buildSRMPacket()
             srmCount++;
 
 
-            intg32=htobe32(*((uint32_t *)(temp_id)));
+            //intg32 = htobe32(*((uint32_t *)(temp_id)));
+            intg32 = 12;
             memcpy(srm->vehicleData.buf+1,&intg32,4);
-
-//            intg16=htobe16(sec_16);
-            intg16=htobe16(gpsData.actual_time);
+//            memcpy(&(srm->vehicleData.buf[1]),&intg32,4);
+//
+////            intg16=htobe16(sec_16);
+            //intg16=htobe16(gpsData.actual_time); // original one
+            intg16 = (uint16_t)(gpsData.actual_time);
             memcpy(srm->vehicleData.buf+5,&intg16,2);
-
-//            j = latitude_val;
-            intg32=htobe32(gpsData.latitude);
+//
+////            j = latitude_val;
+//            intg32=htobe32(gpsData.latitude); // original one
+            intg32 = (uint32_t)(gpsData.latitude);
             memcpy(srm->vehicleData.buf+7,&intg32,4);
-
-//            j=  longitude_val;
-            intg32=htobe32(gpsData.longitude);
+//
+////            j=  longitude_val;
+//            intg32=htobe32(gpsData.longitude);
+            intg32 = (uint32_t)(gpsData.longitude);
             memcpy(srm->vehicleData.buf+11,&intg32,4);
-
-//          elev Elevation, -x- 2 bytes
-            intg16=htobe16(gpsData.altitude);
+//
+////          elev Elevation, -x- 2 bytes
+//            intg16=htobe16(gpsData.altitude);
+            intg16=(uint16_t)(gpsData.altitude);
             memcpy(srm->vehicleData.buf+15,&intg16,2);
-
+//
             j= 0xFFFFFFFF;// default value of positional_Accuracy
             memcpy(srm->vehicleData.buf+17,&j,4);
-
-            intg16=htobe16((uint16_t)(gpsData.speed));
+//
+//            intg16=htobe16((uint16_t)(gpsData.speed));
+            intg16=(uint16_t)(gpsData.speed);
             memcpy(srm->vehicleData.buf+21,&intg16,2);
-
-            intg16 = htobe16((uint16_t)(gpsData.course));
+//
+//            intg16 = htobe16((uint16_t)(gpsData.course));
+            intg16=(uint16_t)(gpsData.course);
             memcpy(srm->vehicleData.buf+23,&intg16,2);
-
+//
             stw = 127;//default value for Steering Wheel Angle
             memcpy(srm->vehicleData.buf+25,&stw,1);
-
-//            if(wsmgps.speed == GPS_INVALID_DATA)
-//                lon_acc_accl = 2001;//default value for longitude accleration
+//
+////            if(wsmgps.speed == GPS_INVALID_DATA)
+////                lon_acc_accl = 2001;//default value for longitude accleration
             lon_acc_accl = 2001;
             sintg16 = lon_acc_accl;
-            sintg16 = htobe16(sintg16);
+//            sintg16 = htobe16(sintg16);
+            sintg16 = (int16_t)(sintg16);
             memcpy(srm->vehicleData.buf+26,&sintg16,2);//longi acc
-
+//
             tmpintg16 = 2001;//default value for latitude accleration
-            intg16 = htobe16(tmpintg16);
+            sintg16 = (uint16_t)(tmpintg16);
+//            intg16 = htobe16(tmpintg16);
             memcpy(srm->vehicleData.buf+28,&intg16,2);
-
+//
             stw = -127;//default value for vertical accleration
             memcpy(srm->vehicleData.buf+30,&stw,1);
-
-//            if(wsmgps.course == GPS_INVALID_DATA || heading_val == 28800)
-//                yaw_rate = 32767;//default value for yaw accleration
+//
+////            if(wsmgps.course == GPS_INVALID_DATA || heading_val == 28800)
+////                yaw_rate = 32767;//default value for yaw accleration
             yaw_rate = 32767;//default value for yaw accleration
             sintg16 = yaw_rate;
-            sintg16 = htobe16(sintg16);
+           // sintg16 = htobe16(sintg16);
+            sintg16 = (int16_t)(sintg16);
             memcpy(srm->vehicleData.buf+31,&sintg16,2);//yaw
-
-            tmpintg16 = 0x0800;//default value for brakeSystem Status
-            intg16 = htobe16(tmpintg16);
-            memcpy(srm->vehicleData.buf+33,&intg16,2);
-
-//            memcpy(srm->vehicleData.buf+35,vsize,3);
+//
+//            tmpintg16 = 0x0800;//default value for brakeSystem Status
+//            intg16 = htobe16(tmpintg16);
+//            memcpy(srm->vehicleData.buf+33,&intg16,2);
+//
+////            memcpy(srm->vehicleData.buf+35,vsize,3);
         }
+
     }
 
     rvalenc = der_encode_to_buffer(&asn_DEF_SignalRequestMsg, srm, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
@@ -685,7 +734,7 @@ int readConfig(void) //  used for reading things from files
 int fullMapMatching (GPSData *gpsData, double * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp )
 {
     //printf("####21\n");
-    if ((gpsData->actual_time ) > 1473708847) //5
+    if (( gpsData->actual_time ) > 1473708847) //5
     {
         *linkIDtmp = 0;
         *distanceToPoint = 0;

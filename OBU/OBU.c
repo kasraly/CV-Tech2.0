@@ -401,31 +401,44 @@ int buildSRMPacket()
 
     // build SRM pachket for preemption control
     {
+        // request element
+        {
+            srm->request.id.buf = (uint8_t *) calloc(1, sizeof(uint8_t));
+            srm->request.id.size = sizeof(uint8_t);
+            srm->request.id.buf[0] = 27; // just for a demo
+        }
 
-        srm->request.id.buf = (uint8_t *) calloc(1, sizeof(uint8_t));
-        srm->request.id.size = sizeof(uint8_t);
-        srm->request.id.buf[0] = 27; // just for a demo
+        // endofService element
+        {
+            // before we use it we directly allocate some memeory spaces
+            srm->endOfService = (struct DTime *) calloc(1,sizeof(struct DTime));
+            srm->endOfService->second = 1; //way1, use '->' to point a member belongs to a struct pointer variable
 
-        // before we use it we directly allocate some memeory spaces
-        srm->endOfService = (struct DTime *) calloc(1,sizeof(struct DTime));
-        srm->endOfService->second = 1; //way1, use '->' to point a member belongs to a struct pointer variable
-
-////        srm->endOfService.second
+////      srm->endOfService.second
 //        struct DTime *endOfService_t; // way2, use use a pointer
 //        endOfService_t = (struct DTime *) calloc(1,sizeof(struct DTime));
 //        endOfService_t->second = 1;
 //        srm->endOfService = endOfService_t;
-//
           // way3, use use a struct variable
           // struct DTime endOfService_t;
           //endOfService_t.second = 1; // way2, use '.' to point a member belongs to a struct variable
 //        srm->endOfService = &endOfService_t; //
+        }
+
+        // vehicleVin element
+        {
+            srm->vehicleVIN = (struct VehicleIdent*) calloc(1,sizeof(struct VehicleIdent));
+            srm->vehicleVIN->id = (TemporaryID_t*) calloc(1,sizeof(TemporaryID_t));
+
+//            srm->vehicleVIN->id.size = sizeof(uint8_t);
+//            srm->vehicleVIN->id.buf[0] = 28; /* Choose what type of message you want to transfer */
+        }
 
         // vehicleData->bsm_blob mannually
         {
             //predefined variables
             int j;
-            uint8_t temp_id = 28;
+            uint8_t temp_id = 29;
             uint16_t intg16, tmpintg16;
             uint32_t intg32;
 

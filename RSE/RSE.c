@@ -95,6 +95,9 @@ int main()
 
     while (1) //infinite loop
     {
+
+        static int preemptPhase = 0x00;
+        static float preemptPhaseTime = 0;
         static int counter = 0;
         static int spatCounter = 0;
         gettimeofday(&currentTimeTV, NULL);
@@ -106,28 +109,20 @@ int main()
             spatCounter ++;
             if (spatCounter >= (int)(SPaT_READ_INTERVAL/MIN_INTERVAL))
             {
-                static int preempt_phase = 0x22;
                 spatCounter = 0;
                 readSPaT(0, currentTime);
 
-                if (currentTimeTV.tv_sec % 100 == 0)
+                if (preemptPhaseTime > 0)
                 {
-                    if (preempt_phase == 0x22)
-                        preempt_phase = 0x48;
-                    else if (preempt_phase == 0x48)
-                        preempt_phase = 0x88;
-                    else if (preempt_phase == 0x88)
-                        preempt_phase = 0x22;
-                }
-
-                if (currentTimeTV.tv_sec % 100 > 60)
-                {
-                    signalPreempt(preempt_phase);
+                    preemptPhaseTime -= SPaT_READ_INTERVAL;
                 }
                 else
                 {
-                    signalPreempt(0x00);
+                    preemptPhaseTime = 0;
+                    preemptPhase = 0;
                 }
+
+                signalPreempt(preemptPhase);
             }
 
             counter ++;
@@ -152,8 +147,8 @@ int main()
                     gpsData.speed);
 
 
-                buildSRMPacket();
-                //buildSPATPacket();
+                //buildSRMPacket();
+                buildSPATPacket();
 
                 //send the DSRC message
                 if( txWSMPacket(pid, &wsmreqTx) < 0)
@@ -186,6 +181,10 @@ int main()
                 SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
                 printf("Received Signal Request Message, Mesage count %d\n\v", (int)srmRcv->msgCnt);
                 xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
+//****************** improve this
+                preemptPhaseTime = srmRcv->endOfService->second;
+                preemptPhase = 0x02;
+//****************
             }
         }
 

@@ -58,7 +58,7 @@ void closeAll(void);
 void initDsrc();
 int readConfig(void);
 
-int processSRM(SignalRequestMsg_t *srm, int *preemptPhase, float *preemptPhaseTime);
+int processSRM(SignalRequestMsg_t *srm, unsigned char *preemptPhase, float *preemptPhaseTime);
 
 int main()
 {
@@ -100,7 +100,7 @@ int main()
     while (1) //infinite loop
     {
 
-        static int preemptPhase = 0x00;
+        static unsigned char preemptPhase = 0x00;
         static float preemptPhaseTime = 0;
         static int counter = 0;
         static int spatCounter = 0;
@@ -439,7 +439,7 @@ int confirmBeforeJoin(WMEApplicationIndication *appind)
     return 1; /* Return 0 for NOT Joining the WBSS */
 }
 
-int processSRM(SignalRequestMsg_t *srm, int *preemptPhase, float *preemptPhaseTime)
+int processSRM(SignalRequestMsg_t *srm, unsigned char *preemptPhase, float *preemptPhaseTime)
 {
     int preemptActive = (*preemptPhaseTime <= 0);
     static int vehicleID = 0;

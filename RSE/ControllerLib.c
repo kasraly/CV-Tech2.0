@@ -237,7 +237,7 @@ int signalPreempt(unsigned char preemptPhase)
         case ACTIVE:
             if (preemptPhase == 0)
             {
-                if (lastPhase != desiredPhase)
+                if ((lastPhase & desiredPhase) == 0)
                 {
                     omitPhase(~lastPhase);
                 }

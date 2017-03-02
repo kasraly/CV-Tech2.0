@@ -448,7 +448,7 @@ int processSRM(SignalRequestMsg_t *srm, int *preemptPhase, float *preemptPhaseTi
         if (preemptActive)
         {
             vehicleID = srm->vehicleVIN->id->buf[0];
-            *preemptPhase = 0x04;
+            *preemptPhase = 0x08;
             *preemptPhaseTime = srm->endOfService->second;
 
             preemptActive = 1;

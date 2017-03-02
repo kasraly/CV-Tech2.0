@@ -346,6 +346,9 @@ int closeController()
 #ifdef CONTROLLER_SNMP
     if (controllerActive == 1)
     {
+        omitPhase(0x00);
+        holdPhase(0x00);
+
         struct snmp_pdu *req, *resp;
         oid anOID[MAX_OID_LEN];
         size_t anOID_len = MAX_OID_LEN;

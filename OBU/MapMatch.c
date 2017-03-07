@@ -32,7 +32,7 @@ struct mapLink{
     int id;
     int startNodeIndex;
     int endNodeIndex;
-    float heading;
+    int heading;
 };
 
 struct mapNode *mapNodes;
@@ -44,9 +44,10 @@ int numLinks;
 double dist(Point*, Point*);
 double dist_Point_to_Link(Point*, struct mapLink*, float*);
 
-double heading(struct mapNode* startNode, struct mapNode* endNode)
+int heading(struct mapNode* startNode, struct mapNode* endNode)
 {
-    return atan2(endNode->P.lon-startNode->P.lon,endNode->P.lat-startNode->P.lat) * 180 / M_PI;
+    int head = (int)(atan2(endNode->P.lon-startNode->P.lon,endNode->P.lat-startNode->P.lat) * 180 / M_PI);
+    return (head < 0 ? head+360 : head);
 }
 
 int initMapMatch()
@@ -165,7 +166,7 @@ int initMapMatch()
             else
             {
                 mapLinks[i].heading = heading(&mapNodes[mapLinks[i].startNodeIndex], &mapNodes[mapLinks[i].endNodeIndex]);
-                printf("Link %d info: id %d, startNode %d, endNode %d, heading %.0f\n",
+                printf("Link %d info: id %d, startNode %d, endNode %d, heading %d\n",
                         i, mapLinks[i].id, mapNodes[mapLinks[i].startNodeIndex].id, mapNodes[mapLinks[i].endNodeIndex].id, mapLinks[i].heading);
             }
 
@@ -209,7 +210,7 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
 
     for(i=0; i<numLinks; i++)
     {
-        if (fabs(mapLinks[i].heading - gpsData->course) < 45){
+        if (abs((int)mapLinks[i].heading - gpsData->course) < 45){
             double distance;
             float distFromStartTmp;
 
@@ -222,6 +223,8 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
 
         }
     }
+
+    printf("matched: link %d, distance %f, start distance %f\n",mapLinks[matchLinkIndex].id, distanceBest,*distFromStart);
     return mapLinks[matchLinkIndex].id;
 }
 
@@ -239,11 +242,20 @@ double dist_Point_to_Link(Point* P, struct mapLink* S, float* distFromStart)
 
     double c1 = dot(w,v);
     if ( c1 <= 0 )
-        return dist(P, &mapNodes[S->startNodeIndex].P);
+    {
+        double distance;
+        distance = dist(P, &mapNodes[S->startNodeIndex].P);
+        *distFromStart = distance*M_PI/180.0*EARTH_RADIUS;
+        return distance;
+    }
 
     double c2 = dot(v,v);
-    if ( c2 <= c1 )
-        return dist(P, &mapNodes[S->endNodeIndex].P);
+    if ( c2 <= c1 ){
+        double distance;
+        distance = dist(P, &mapNodes[S->endNodeIndex].P);
+        *distFromStart = dist(P, &mapNodes[S->startNodeIndex].P)*M_PI/180.0*EARTH_RADIUS;
+        return distance;
+    }
 
     double b = c1 / c2;
     Point Pb;

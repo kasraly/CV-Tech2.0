@@ -5,6 +5,9 @@
 
 #define _GNU_SOURCE
 
+
+#define OFFLINE
+//#undef OFFLINE
 #include "gpsc_probe.h"
 #include "MapMatch.h"
 #include "wave.h"
@@ -162,9 +165,13 @@ int main()
 
                 printf("\nReading GPS information....\n");
 
-                char ch = '1';
-                write(gpsSockFd,&ch,1);
-                read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
+                #ifdef OFFLINE
+                    read_GPS_log(&gpsData, currentTime);
+                #else
+                    char ch = '1';
+                    write(gpsSockFd,&ch,1);
+                    read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
+                #endif // OFFLINE
 
                 printf("RSE GPS Data\nTime: %.3f, GPSTime: %.1f, Lat: %.7f, Lon: %.7f\nAlt: %.1f, course: %.0f, speed, %.2f\n",
                     currentTime,

@@ -7,5 +7,5 @@
 int initMapMatch();
 int cleanMapMatch();
 
-int mapMatch(GPSData *, int *, float *);
+int mapMatch(GPSData *, float *);
 

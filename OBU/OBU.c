@@ -175,6 +175,12 @@ int main()
                     gpsData.course,
                     gpsData.speed);
 
+                int matchLink;
+                float distance;
+                matchLink = mapMatch(&gpsData, &distance);
+
+                printf("MapMatch matched gps point to link %d, distance from link start %f\n",matchLink, distance);
+
 
                 //buildSRMPacket();
                 //buildSPATPacket();

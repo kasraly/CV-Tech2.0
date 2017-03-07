@@ -6,6 +6,7 @@
 #define _GNU_SOURCE
 
 #include "gpsc_probe.h"
+#include "MapMatch.h"
 #include "wave.h"
 #include "asnwave.h"
 #include "SPAT.h"
@@ -115,6 +116,8 @@ int main()
         pid = getpid();
 
         readConfig();
+
+        initMapMatch();
 
         initDsrc(); // initialize the DSRC channels and invoke the drivers for sending and recieving
 
@@ -304,6 +307,7 @@ void closeAll(void)
     removeUser(pid, &entryRx);
     //closeController();
     gpsc_close_sock();
+    cleanMapMatch();
     signal(SIGINT,SIG_DFL);
     printf("\n\nPackets Sent =  %llu\n",packetsTx);
     printf("\nPackets Dropped = %llu\n",dropsTx);

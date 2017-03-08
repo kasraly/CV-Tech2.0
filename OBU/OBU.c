@@ -8,6 +8,11 @@
 
 #define OFFLINE
 //#undef OFFLINE
+
+#ifdef OFFLINE
+    #include "GPS_offline.h"
+#endif // OFFLINE
+
 #include "gpsc_probe.h"
 #include "MapMatch.h"
 #include "wave.h"
@@ -92,7 +97,8 @@ void sig_int(void);
 void sig_term(void);
 void closeAll(void);
 void initDsrc();
-int  readConfig(void);
+int readConfig(void);
+int updateGPSCourse(GPSData *gpsData);
 
 // 20170301
 int fullMapMatching (GPSData *gpsData, double * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp );
@@ -173,6 +179,8 @@ int main()
                     read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
                 #endif // OFFLINE
 
+                updateGPSCourse(&gpsData);
+
                 printf("RSE GPS Data\nTime: %.3f, GPSTime: %.1f, Lat: %.7f, Lon: %.7f\nAlt: %.1f, course: %.0f, speed, %.2f\n",
                     currentTime,
                     gpsData.actual_time,
@@ -183,10 +191,10 @@ int main()
                     gpsData.speed);
 
                 int matchLink;
-                float distance;
-                matchLink = mapMatch(&gpsData, &distance);
+                float linkStartDistance;
+                matchLink = mapMatch(&gpsData, &linkStartDistance);
 
-                printf("MapMatch matched gps point to link %d, distance from link start %f\n",matchLink, distance);
+                printf("MapMatch matched gps point to link %d, distance from link start %f\n",matchLink, linkStartDistance);
 
 
                 //buildSRMPacket();
@@ -760,4 +768,20 @@ int fullMapMatching (GPSData *gpsData, double * linkIDtmp, double *distanceToPoi
     }
 
     return 1;
+}
+
+int updateGPSCourse(GPSData *gpsData)
+{
+    static double lastCourse = 0;
+    if ((gpsData->speed < 0.2) & (gpsData->course == 0))
+    {
+        gpsData->course = lastCourse;
+        return 1;
+    }
+    else
+    {
+        lastCourse = gpsData->course;
+        return 0;
+    }
+
 }

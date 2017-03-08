@@ -38,8 +38,10 @@ struct mapLink{
 struct mapNode *mapNodes;
 struct mapLink *mapLinks;
 
-int numNodes;
-int numLinks;
+int numNodes = 0;
+int numLinks = 0;
+int headingThd = 45;
+double distHyst = 0.0001;
 
 double dist(Point*, Point*);
 double dist_Point_to_Link(Point*, struct mapLink*, float*);
@@ -85,6 +87,19 @@ int initMapMatch()
                 numNodes = atoi(str);
                 printf("Number of nodes in Map is %d\n",numNodes);
             }
+            else if (strcasecmp(str,"HeadingThd")==0)
+            {
+                str = strtok (NULL," ,");
+                headingThd = atoi(str);
+                printf("Heading Threshold is %d\n",headingThd);
+            }
+            else if (strcasecmp(str,"DistHyst")==0)
+            {
+                str = strtok (NULL," ,");
+                distHyst = atof(str);
+                printf("Distance Hysteresis is %f\n",distHyst);
+            }
+
         }
         free(line);
         fclose(configFile);
@@ -201,7 +216,7 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
 
     if (matchLinkIndex >= 0){
         distanceBest = dist_Point_to_Link(&P, &mapLinks[matchLinkIndex], distFromStart)
-            - 0.0001; //about 10 meters [in degrees] for offset
+            - distHyst; //about 10 meters [in degrees] for offset
     }
     else{
         distanceBest = 1000;
@@ -210,7 +225,7 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
 
     for(i=0; i<numLinks; i++)
     {
-        if (abs((int)mapLinks[i].heading - gpsData->course) < 45){
+        if (abs((int)mapLinks[i].heading - gpsData->course) < headingThd){
             double distance;
             float distFromStartTmp;
 
@@ -220,11 +235,9 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
                 distanceBest = distance;
                 *distFromStart = distFromStartTmp;
             }
-
         }
     }
 
-    printf("matched: link %d, distance %f, start distance %f\n",mapLinks[matchLinkIndex].id, distanceBest,*distFromStart);
     return mapLinks[matchLinkIndex].id;
 }
 
@@ -233,37 +246,21 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
 //     Return: the shortest distance from P to S
 double dist_Point_to_Link(Point* P, struct mapLink* S, float* distFromStart)
 {
-    Vector v;
-    v.latDif = mapNodes[S->endNodeIndex].P.lat - mapNodes[S->startNodeIndex].P.lat;
-    v.lonDif = mapNodes[S->endNodeIndex].P.lon - mapNodes[S->startNodeIndex].P.lon;
-    Vector w;
-    w.latDif = P->lat - mapNodes[S->startNodeIndex].P.lat;
-    w.lonDif = P->lon - mapNodes[S->startNodeIndex].P.lon;
+    double a = dist(P, &mapNodes[S->startNodeIndex].P);
+    double b = dist(P, &mapNodes[S->endNodeIndex].P);
+    double c = dist(&mapNodes[S->endNodeIndex].P, &mapNodes[S->startNodeIndex].P);
 
-    double c1 = dot(w,v);
-    if ( c1 <= 0 )
+    double d = (c*c-b*b+a*a)/(2*c);
+    *distFromStart = (float)(d*M_PI/180.0*EARTH_RADIUS);
+    if (d<0)
     {
-        double distance;
-        distance = dist(P, &mapNodes[S->startNodeIndex].P);
-        *distFromStart = distance*M_PI/180.0*EARTH_RADIUS;
-        return distance;
+        return a;
     }
-
-    double c2 = dot(v,v);
-    if ( c2 <= c1 ){
-        double distance;
-        distance = dist(P, &mapNodes[S->endNodeIndex].P);
-        *distFromStart = dist(P, &mapNodes[S->startNodeIndex].P)*M_PI/180.0*EARTH_RADIUS;
-        return distance;
+    if (d>c)
+    {
+        return b;
     }
-
-    double b = c1 / c2;
-    Point Pb;
-    Pb.lat = mapNodes[S->startNodeIndex].P.lat + b * v.latDif;
-    Pb.lon = mapNodes[S->startNodeIndex].P.lat + b * v.lonDif;
-
-    *distFromStart = dist(&mapNodes[S->startNodeIndex].P, &Pb)*M_PI/180.0*EARTH_RADIUS;
-    return dist(P, &Pb);
+    return sqrt(a*a-d*d);
 }
 //===================================================================
 

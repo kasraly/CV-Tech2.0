@@ -30,6 +30,14 @@
 		<Compiler>
 			<Add option="-Wall" />
 		</Compiler>
+		<Unit filename="GPS_offline.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="GPS_offline.h" />
+		<Unit filename="MapMatch.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="MapMatch.h" />
 		<Unit filename="OBU.c">
 			<Option compilerVar="CC" />
 		</Unit>

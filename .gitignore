@@ -7,3 +7,5 @@ OBU_GPSlog/OBU_GPSlog.layout
 *.o
 
 TerminalCommands\.txt
+
+*.layout

@@ -13,7 +13,16 @@
 
 #define _GNU_SOURCE
 
+
+#define OFFLINE
+//#undef OFFLINE
+
+#ifdef OFFLINE
+    #include "GPS_offline.h"
+#endif // OFFLINE
+
 #include "gpsc_probe.h"
+#include "MapMatch.h"
 #include "wave.h"
 #include "asnwave.h"
 #include "SPAT.h"
@@ -102,7 +111,8 @@ void sig_int(void);
 void sig_term(void);
 void closeAll(void);
 void initDsrc();
-int  readConfig(void);
+int readConfig(void);
+int updateGPSCourse(GPSData *gpsData);
 
 // 20170301
 int fullMapMatching (GPSData *gpsData, int * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp );
@@ -142,6 +152,8 @@ int main()
         pid = getpid();
 
         readConfig();
+
+        initMapMatch();
 
         initDsrc(); // initialize the DSRC channels and invoke the drivers for sending and recieving
 
@@ -187,9 +199,15 @@ int main()
 
                 printf("\nReading GPS information....\n");
 
-                char ch = '1';
-                write(gpsSockFd,&ch,1);
-                read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
+                #ifdef OFFLINE
+                    read_GPS_log(&gpsData, currentTime);
+                #else
+                    char ch = '1';
+                    write(gpsSockFd,&ch,1);
+                    read(gpsSockFd,(void *)&gpsData,sizeof(gpsData));
+                #endif // OFFLINE
+
+                updateGPSCourse(&gpsData);
 
                 printf("RSE GPS Data\nTime: %.3f, GPSTime: %.1f, Lat: %.7f, Lon: %.7f\nAlt: %.1f, course: %.0f, speed, %.2f\n",
                     currentTime,
@@ -199,6 +217,12 @@ int main()
                     gpsData.altitude,
                     gpsData.course,
                     gpsData.speed);
+
+                int matchLink;
+                float linkStartDistance;
+                matchLink = mapMatch(&gpsData, &linkStartDistance);
+
+                printf("MapMatch matched gps point to link %d, distance from link start %f\n",matchLink, linkStartDistance);
 
 
                 //buildSRMPacket();
@@ -347,6 +371,7 @@ void closeAll(void)
     removeUser(pid, &entryRx);
     //closeController();
     gpsc_close_sock();
+    cleanMapMatch();
     signal(SIGINT,SIG_DFL);
     printf("\n\nPackets Sent =  %llu\n",packetsTx);
     printf("\nPackets Dropped = %llu\n",dropsTx);
@@ -787,4 +812,20 @@ int fullMapMatching (GPSData *gpsData, int * linkIDtmp, double *distanceToPoint,
     }
 
     return 1;
+}
+
+int updateGPSCourse(GPSData *gpsData)
+{
+    static double lastCourse = 0;
+    if ((gpsData->speed < 0.2) & (gpsData->course == 0))
+    {
+        gpsData->course = lastCourse;
+        return 1;
+    }
+    else
+    {
+        lastCourse = gpsData->course;
+        return 0;
+    }
+
 }

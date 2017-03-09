@@ -1,3 +1,8 @@
-*.layout
-*.o
+
 *.depend
+
+*.o
+
+TerminalCommands\.txt
+
+*.layout

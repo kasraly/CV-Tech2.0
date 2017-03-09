@@ -6,3 +6,7 @@
 TerminalCommands\.txt
 
 *.layout
+
+OBU/bin/Release/
+
+OBU/obj/

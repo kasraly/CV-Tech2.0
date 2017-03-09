@@ -8,7 +8,6 @@
 
 extern preemptionRouteColumn_t preemptionRouteColumnVar;
 extern int preemptionRoute_Length_g;
-extern  *srm;
 
 preemptionRouteColumn_t preemptionApproachingIntersectionInfo;
 char broadcastSRM_enableFlag; // the enabling flag that shows whether to braodcast SRM or not

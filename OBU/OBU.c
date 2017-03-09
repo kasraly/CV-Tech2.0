@@ -218,12 +218,6 @@ int main()
                     gpsData.course,
                     gpsData.speed);
 
-                int matchLink;
-                float linkStartDistance;
-                matchLink = mapMatch(&gpsData, &linkStartDistance);
-
-                printf("MapMatch matched gps point to link %d, distance from link start %f\n",matchLink, linkStartDistance);
-
 
                 //buildSRMPacket();
                 //buildSPATPacket();
@@ -256,8 +250,14 @@ int main()
 
                 counter2 = 0;
                 printf("Map matching ok\n");
-                fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
-                linkID_g = 1094; // for demo purpose, the map macting is still  under constroctions.
+
+                float linkStartDistance;
+                linkID_g = mapMatch(&gpsData, &linkStartDistance);
+
+                printf("MapMatch matched gps point to link %d, distance from link start %f\n",linkID_g, linkStartDistance);
+
+//                fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
+//                linkID_g = 1094; // for demo purpose, the map macting is still  under constroctions.
             }
 
             if (counter3 >= (int)(TIMER3_SRMGE4PRE/MIN_INTERVAL)) // message generating

@@ -25,8 +25,8 @@ typedef struct preemptionRouteColumn {
     double *distanceThreshold;
 } preemptionRouteColumn_t;
 
-int parsePreemptionRoute(int linkID_g );
-int extractCorrespondingLinkInfo (int linkID_g);
-int preemptionStrategy(GPSData *gpsData, int linkID_g);
+int parsePreemptionRoute(int linkID_g );  // get the coresponding row from the table when input the linkID
+int extractCorrespondingLinkInfo (int linkID_g);  // extract Corresponding LinkInfo from link ID
+int preemptionStrategy(GPSData *gpsData, int linkID_g); // perform preemptionStrategy according to location and intersectrion info
 double distance_calc(double lat1, double lon1, double lat2, double lon2,double elev);
 //double distanceCalcSimple(double lat1, double lon1, double lat2, double lon2);

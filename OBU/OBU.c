@@ -1,13 +1,13 @@
 /* change logs
-v0.1 170115 initial from the template
-v0.2 170221 SRM message's predifined values, map matching/SRM declarations
-v0.3 170306 filled the phase number and discussed about the preemption control
-              in OBE
-v0.4 170308 1.finished the discussions about the implementation in OBE and started
-              the implement this in OBE.
-              2. Major function = loading table + searching ID +distance Calulation
-              3. the map macting part is still  under constroctions.
-v0.5 170309 1.loading table. 2.
+170115 initial from the template
+170221 SRM message's predifined values, map matching/SRM declarations
+170306 filled the phase number and discussed about the preemption control in OBE
+170308 1.finished the discussions about the implementation in OBE and started the implement this in OBE.
+       2. Major function = loading table + searching ID +distance Calulation
+       3. the map macting part is still  under constroctions.
+170309 1.loading table. 2.searching copresponding Intersection Info
+       3. perform preemption control strategy
+
 
 */
 

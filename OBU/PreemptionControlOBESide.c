@@ -26,6 +26,7 @@ int preemptionStrategy(GPSData *gpsData, int linkID_g)
     row_order = parsePreemptionRoute(linkID_g);  // get information
 
     // algorithm 1 is implemennted
+    // in the future the algorithm 2 will be implemented.
     if( row_order >= 1  )  // we have found one corresponsing intersection from the table
     {
         dist2ApproachingIntersection = distance_calc(gpsData->latitude, gpsData->longitude,

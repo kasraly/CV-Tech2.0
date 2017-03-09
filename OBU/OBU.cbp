@@ -33,6 +33,10 @@
 		<Unit filename="OBU.c">
 			<Option compilerVar="CC" />
 		</Unit>
+		<Unit filename="PreemptionControlOBESide.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="PreemptionControlOBESide.h" />
 		<Unit filename="gpsc_probe.c">
 			<Option compilerVar="CC" />
 		</Unit>

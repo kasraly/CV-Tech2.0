@@ -1,7 +1,14 @@
-// change logs
-// v0.1 20170115 initial from the template
-// v0.2 20170301 SRM message's predifined values, map matching/SRM declarations
-//
+/* change logs
+v0.1 20170115 initial from the template
+v0.2 20170221 SRM message's predifined values, map matching/SRM declarations
+v0.3 20170306 filled the phase number and discussed about the preemption control
+              in OBE
+v0.4 20170308 1.finished the discussions about the implementation in OBE and started
+              the implement this in OBE.
+              2. Major function = loading table + searching ID +distance Calulation
+              3. the map macting part is still  under constroctions.
+
+*/
 
 #define _GNU_SOURCE
 
@@ -16,7 +23,7 @@
 // #include "ControllerLib.h"
 #define MIN_INTERVAL 0.1 //seconds
 #define TIME_STEP 1 //seconds TIMER1, sending broadcast per 1 second
-#define TIMER2_MAPMATCHING 0.1 // map matching callback
+#define TIMER2_MAPMATCHING 1 // map matching callback
 #define TIMER3_SRMGE4PRE 1 // message genarating, per second
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
@@ -41,7 +48,7 @@ typedef struct BSMblobVerbose {
 } BSMblobVerbose;
 // signal request message
 SignalRequestMsg_t *srm;
-double linkID_g;
+int linkID_g;
 double distanceToPoint_g;
 double intersectionID_g;
 
@@ -91,7 +98,9 @@ void initDsrc();
 int  readConfig(void);
 
 // 20170301
-int fullMapMatching (GPSData *gpsData, double * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp );
+int fullMapMatching (GPSData *gpsData, int * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp );
+void parsePreemptionRoute(int linkID_g);
+
 
 int main()
 {
@@ -147,7 +156,7 @@ int main()
         {
             previousTime = previousTime + MIN_INTERVAL;
             counter ++;
-            //counter2 ++;
+            counter2 ++;
             counter3 ++;
 
 
@@ -201,8 +210,11 @@ int main()
 
             if (counter2 >= (int)(TIMER2_MAPMATCHING/MIN_INTERVAL)) // map matching callback functions
             {
+
                 counter2 = 0;
+                printf("Map matching ok\n");
                 fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
+                linkID_g = 1094; // for demo purpose, the map macting is still  under constroctions.
             }
 
             if (counter3 >= (int)(TIMER3_SRMGE4PRE/MIN_INTERVAL)) // message generating
@@ -212,10 +224,12 @@ int main()
 
 
                 //printf(" sending ok 11 \n");
+                printf("Link ID:%d.\n",linkID_g);
+                parsePreemptionRoute(linkID_g);
 
                 buildSRMPacket();
 
-                printf(" sending ok \n");
+                printf("Sending ok \n");
 
                 //send the DSRC message
                 {
@@ -424,12 +438,12 @@ int buildSRMPacket()
             // id
             srm->request.id.buf = (uint8_t *) calloc(1, sizeof(uint8_t));
             srm->request.id.size = sizeof(uint8_t);
-            srm->request.id.buf[0] = 27; // just for a demo
+            srm->request.id.buf[0] = 27; // just for a demo, it is a ID
             // *requestedAction
             srm->request.requestedAction = (SignalReqScheme_t *) calloc(1, sizeof(SignalReqScheme_t));
             srm->request.requestedAction->buf = (uint8_t *) calloc(1, sizeof(uint8_t));
             srm->request.requestedAction->size = sizeof(uint8_t);
-            srm->request.requestedAction->buf[0] = 27; // just for a demo
+            srm->request.requestedAction->buf[0] = 3; // phase number
 
         }
 
@@ -567,6 +581,7 @@ int buildSRMPacket()
 
     }
 
+    // encode part for encoding them to ASN.1 standard
     rvalenc = der_encode_to_buffer(&asn_DEF_SignalRequestMsg, srm, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
     if (rvalenc.encoded == -1) {
         fprintf(stderr, "Cannot encode %s: %s\n",
@@ -731,7 +746,7 @@ int readConfig(void) //  used for reading things from files
     return 0;
 }
 
-int fullMapMatching (GPSData *gpsData, double * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp )
+int fullMapMatching (GPSData *gpsData, int * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp )
 {
     //printf("####21\n");
     if (( gpsData->actual_time ) > 1473708847) //5
@@ -743,4 +758,9 @@ int fullMapMatching (GPSData *gpsData, double * linkIDtmp, double *distanceToPoi
     }
 
     return 1;
+}
+
+void parsePreemptionRoute(int linkID_g)
+{
+    printf("We are going to parse the table defined the preemption route.\n");
 }

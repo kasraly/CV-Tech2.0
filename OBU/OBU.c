@@ -1,12 +1,13 @@
 /* change logs
-v0.1 20170115 initial from the template
-v0.2 20170221 SRM message's predifined values, map matching/SRM declarations
-v0.3 20170306 filled the phase number and discussed about the preemption control
+v0.1 170115 initial from the template
+v0.2 170221 SRM message's predifined values, map matching/SRM declarations
+v0.3 170306 filled the phase number and discussed about the preemption control
               in OBE
-v0.4 20170308 1.finished the discussions about the implementation in OBE and started
+v0.4 170308 1.finished the discussions about the implementation in OBE and started
               the implement this in OBE.
               2. Major function = loading table + searching ID +distance Calulation
               3. the map macting part is still  under constroctions.
+v0.5 170309 1.loading table. 2.
 
 */
 
@@ -19,6 +20,7 @@ v0.4 20170308 1.finished the discussions about the implementation in OBE and sta
 #include "SignalRequestMsg.h"
 #include "ProbeDataManagement.h"
 #include "BasicSafetyMessageVerbose.h"
+#include "PreemptionControlOBESide.h"
 
 // #include "ControllerLib.h"
 #define MIN_INTERVAL 0.1 //seconds
@@ -27,6 +29,7 @@ v0.4 20170308 1.finished the discussions about the implementation in OBE and sta
 #define TIMER3_SRMGE4PRE 1 // message genarating, per second
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
+
 
 // testing Git
 
@@ -45,15 +48,19 @@ typedef struct BSMblobVerbose {
 	AccelerationSet4Way_t	 accelSet;
 	BrakeSystemStatus_t	 brakes;
 	VehicleSize_t	 size;
-} BSMblobVerbose;
+} BSMblobVerbose_t;
 // signal request message
 SignalRequestMsg_t *srm;
 int linkID_g;
 double distanceToPoint_g;
 double intersectionID_g;
 
-unsigned char  endOfServiceSecCount = 0;
+int preemptionRoute_Length_g = preemptionRoute_Length_DEFINE;
+preemptionRouteColumn_t preemptionRouteColumnVar;
+extern preemptionRouteColumn_t preemptionApproachingIntersectionInfo;
+extern int preemptionControlDurationTime;
 
+unsigned char  endOfServiceSecCount = 0;
 
 
 GPSData gpsData;
@@ -99,7 +106,8 @@ int  readConfig(void);
 
 // 20170301
 int fullMapMatching (GPSData *gpsData, int * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp );
-void parsePreemptionRoute(int linkID_g);
+//int parsePreemptionRoute(int linkID_g, preemptionRouteColumn_t *preemptionRouteColumnVar);
+//int parsePreemptionRoute(int linkID_g );
 
 
 int main()
@@ -118,6 +126,16 @@ int main()
     linkID_g = 0;
     distanceToPoint_g = 0;
     intersectionID_g = 0;
+//    preemptionRouteColumn_t preemptionRouteColumnVar;
+
+    preemptionRouteColumnVar.coloumnOrder   = (int *) calloc(preemptionRoute_Length_g, sizeof(int));
+    preemptionRouteColumnVar.linkID         = (int *) calloc(preemptionRoute_Length_g, sizeof(int));
+    preemptionRouteColumnVar.intersectionID = (int *) calloc(preemptionRoute_Length_g, sizeof(int));
+    preemptionRouteColumnVar.intersectionLongitude = (double *) calloc(preemptionRoute_Length_g, sizeof(double));
+    preemptionRouteColumnVar.intersectionLatitude  = (double *) calloc(preemptionRoute_Length_g, sizeof(double));
+    preemptionRouteColumnVar.phaseNum              = (int *) calloc(preemptionRoute_Length_g, sizeof(int));
+    preemptionRouteColumnVar.distanceThreshold     = (double *) calloc(preemptionRoute_Length_g, sizeof(double));
+
 
     // Initializations:
     {
@@ -148,6 +166,7 @@ int main()
         static int counter = 0;
         static int counter2 = 0;
         static int counter3 = 0;
+
         gettimeofday(&currentTimeTV, NULL);
         currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
 
@@ -221,16 +240,26 @@ int main()
             {
                 counter3 = 0;
 //                fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
-
-
                 //printf(" sending ok 11 \n");
                 printf("Link ID:%d.\n",linkID_g);
-                parsePreemptionRoute(linkID_g);
+//                parsePreemptionRoute(linkID_g);
+
+                extractCorrespondingLinkInfo (linkID_g);
+                printf("InterInfo:%d,%d,%d,%.6f,%.6f,%d,%.2f\n",
+                        preemptionApproachingIntersectionInfo.coloumnOrder[0],
+                        preemptionApproachingIntersectionInfo.linkID[0],
+                        preemptionApproachingIntersectionInfo.intersectionID[0],
+                        preemptionApproachingIntersectionInfo.intersectionLongitude[0],
+                        preemptionApproachingIntersectionInfo.intersectionLatitude[0],
+                        preemptionApproachingIntersectionInfo.phaseNum[0],
+                        preemptionApproachingIntersectionInfo.distanceThreshold[0]
+                );
+                preemptionStrategy(&gpsData, linkID_g);
+
+
 
                 buildSRMPacket();
-
                 printf("Sending ok \n");
-
                 //send the DSRC message
                 {
                     if( txWSMPacket(pid, &wsmreqTx) < 0)
@@ -460,8 +489,8 @@ int buildSRMPacket()
             // before we use it we directly allocate some memeory spaces
             srm->endOfService = (struct DTime *) calloc(1,sizeof(struct DTime));
 //            srm->endOfService->second = endOfServiceSecCount; //way1, use '->' to point a member belongs to a struct pointer variable
-            srm->endOfService->second = 5; //way1, use '->' to point a member belongs to a struct pointer
-
+            //srm->endOfService->second = 5; //way1, use '->' to point a member belongs to a struct pointer
+            srm->endOfService->second = preemptionControlDurationTime;
 
 ////      srm->endOfService.second
 //        struct DTime *endOfService_t; // way2, use use a pointer
@@ -758,9 +787,4 @@ int fullMapMatching (GPSData *gpsData, int * linkIDtmp, double *distanceToPoint,
     }
 
     return 1;
-}
-
-void parsePreemptionRoute(int linkID_g)
-{
-    printf("We are going to parse the table defined the preemption route.\n");
 }

@@ -60,16 +60,15 @@ typedef struct BSMblobVerbose {
 } BSMblobVerbose_t;
 // signal request message
 SignalRequestMsg_t *srm;
-int linkID_g;
+int linkID_g = 0;
 double distanceToPoint_g;
 double intersectionID_g;
 
-int preemptionRoute_Length_g = preemptionRoute_Length_DEFINE;
-preemptionRouteColumn_t preemptionRouteColumnVar;
-extern preemptionRouteColumn_t preemptionApproachingIntersectionInfo;
-extern int preemptionControlDurationTime;
-
 unsigned char  endOfServiceSecCount = 0;
+
+//global variables for Preemption control
+int preemptionControlDurationTime = 5;
+int preempDistance2IntersectionThreshold = 800;
 
 
 GPSData gpsData;
@@ -104,7 +103,7 @@ int buildUSTEntry();
 int buildWSMRequestPacket();
 int buildWMEApplicationRequest();
 
-int buildSRMPacket();
+int buildSRMPacket(int intersectionID, int reqPhase);
 int buildSPATPacket();
 
 void sig_int(void);
@@ -133,20 +132,6 @@ int main()
     struct timeval currentTimeTV;
     double previousTime, currentTime;
 
-    linkID_g = 0;
-    distanceToPoint_g = 0;
-    intersectionID_g = 0;
-//    preemptionRouteColumn_t preemptionRouteColumnVar;
-
-    preemptionRouteColumnVar.coloumnOrder   = (int *) calloc(preemptionRoute_Length_g, sizeof(int));
-    preemptionRouteColumnVar.linkID         = (int *) calloc(preemptionRoute_Length_g, sizeof(int));
-    preemptionRouteColumnVar.intersectionID = (int *) calloc(preemptionRoute_Length_g, sizeof(int));
-    preemptionRouteColumnVar.intersectionLongitude = (double *) calloc(preemptionRoute_Length_g, sizeof(double));
-    preemptionRouteColumnVar.intersectionLatitude  = (double *) calloc(preemptionRoute_Length_g, sizeof(double));
-    preemptionRouteColumnVar.phaseNum              = (int *) calloc(preemptionRoute_Length_g, sizeof(int));
-    preemptionRouteColumnVar.distanceThreshold     = (double *) calloc(preemptionRoute_Length_g, sizeof(double));
-
-
     // Initializations:
     {
         pid = getpid();
@@ -154,6 +139,8 @@ int main()
         readConfig();
 
         initMapMatch();
+
+        initPreemption(preempDistance2IntersectionThreshold);
 
         initDsrc(); // initialize the DSRC channels and invoke the drivers for sending and recieving
 
@@ -265,45 +252,38 @@ int main()
                 counter3 = 0;
 //                fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
                 //printf(" sending ok 11 \n");
-                printf("Link ID:%d.\n",linkID_g);
+                printf("Link ID: %d\n",linkID_g);
 //                parsePreemptionRoute(linkID_g);
-
-                extractCorrespondingLinkInfo (linkID_g);
-                printf("InterInfo:%d,%d,%d,%.6f,%.6f,%d,%.2f\n",
-                        preemptionApproachingIntersectionInfo.coloumnOrder[0],
-                        preemptionApproachingIntersectionInfo.linkID[0],
-                        preemptionApproachingIntersectionInfo.intersectionID[0],
-                        preemptionApproachingIntersectionInfo.intersectionLongitude[0],
-                        preemptionApproachingIntersectionInfo.intersectionLatitude[0],
-                        preemptionApproachingIntersectionInfo.phaseNum[0],
-                        preemptionApproachingIntersectionInfo.distanceThreshold[0]
-                );
-                preemptionStrategy(&gpsData, linkID_g);
+                int srmActive;
+                int intersectionID;
+                int reqPhase;
 
 
-
-                buildSRMPacket();
-                printf("Sending ok \n");
-                //send the DSRC message
+                if (srmActive = preemptionStrategy(&gpsData, linkID_g, &intersectionID, &reqPhase))
                 {
-                    if( txWSMPacket(pid, &wsmreqTx) < 0)
+                    buildSRMPacket(intersectionID, reqPhase);
+                    printf("Sending ok \n");
+                    //send the DSRC message
                     {
-                        dropsTx++;
+                        if( txWSMPacket(pid, &wsmreqTx) < 0)
+                        {
+                            dropsTx++;
+                        }
+                        else
+                        {
+                            packetsTx++;
+                            countTx++;
+                        }
+
+
+                        if((notxpkts != 0) && (countTx >= notxpkts))
+                            break;
+
+                        printf("DSRC message Transmitted #%llu#      Drop #%llu#     len #%u#\n",
+                            packetsTx,
+                            dropsTx,
+                            wsmreqTx.data.length);
                     }
-                    else
-                    {
-                        packetsTx++;
-                        countTx++;
-                    }
-
-
-                    if((notxpkts != 0) && (countTx >= notxpkts))
-                        break;
-
-                    printf("DSRC message Transmitted #%llu#      Drop #%llu#     len #%u#\n",
-                        packetsTx,
-                        dropsTx,
-                        wsmreqTx.data.length);
                 }
             }
         }
@@ -372,6 +352,7 @@ void closeAll(void)
     //closeController();
     gpsc_close_sock();
     cleanMapMatch();
+    closePreemption();
     signal(SIGINT,SIG_DFL);
     printf("\n\nPackets Sent =  %llu\n",packetsTx);
     printf("\nPackets Dropped = %llu\n",dropsTx);
@@ -465,7 +446,7 @@ int buildSPATPacket()
 }
 
  /* Main use of this function is we will encapsulate the SRM related info in to WSM request packet */
-int buildSRMPacket()
+int buildSRMPacket(int intersectionID, int reqPhase)
 {
     static int srmCount = 0;
     asn_enc_rval_t rvalenc;
@@ -492,12 +473,12 @@ int buildSRMPacket()
             // id
             srm->request.id.buf = (uint8_t *) calloc(1, sizeof(uint8_t));
             srm->request.id.size = sizeof(uint8_t);
-            srm->request.id.buf[0] = 27; // just for a demo, it is a ID
-            // *requestedAction
+            srm->request.id.buf[0] = intersectionID; // just for a demo, it is a ID
+            // requestedAction
             srm->request.requestedAction = (SignalReqScheme_t *) calloc(1, sizeof(SignalReqScheme_t));
             srm->request.requestedAction->buf = (uint8_t *) calloc(1, sizeof(uint8_t));
             srm->request.requestedAction->size = sizeof(uint8_t);
-            srm->request.requestedAction->buf[0] = 3; // phase number
+            srm->request.requestedAction->buf[0] = reqPhase; // phase number
 
         }
 

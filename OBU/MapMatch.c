@@ -190,7 +190,7 @@ int initMapMatch()
                 break;
         }
         numLinks = i;
-        printf("Total links: %d", numLinks);
+        printf("Total links: %d\n", numLinks);
         fclose(linkFile);
     }
     return 0;

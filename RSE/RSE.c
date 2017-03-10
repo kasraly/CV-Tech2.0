@@ -126,6 +126,7 @@ int main()
                     preemptPhase = 0;
                 }
 
+                printf("executing Preemption algorithm with requested phase 0x%2x\n",preemptPhase);
                 signalPreempt(preemptPhase);
             }
 
@@ -441,28 +442,27 @@ int confirmBeforeJoin(WMEApplicationIndication *appind)
 
 int processSRM(SignalRequestMsg_t *srm, unsigned char *preemptPhase, float *preemptPhaseTime)
 {
-    int preemptActive = (*preemptPhaseTime <= 0);
     static int vehicleID = 0;
     if (srm->request.id.buf[0] == intersectionID)
     {
-        if (preemptActive)
+        if (*preemptPhaseTime <= 0)
         {
             vehicleID = srm->vehicleVIN->id->buf[0];
-            *preemptPhase = 0x08;
+            *preemptPhase = 0x01<<(srm->request.requestedAction->buf[0]-1);
             *preemptPhaseTime = srm->endOfService->second;
-
-            preemptActive = 1;
+            return 1;
         }
         else
         {
             if (vehicleID == srm->vehicleVIN->id->buf[0])
             {
                 *preemptPhaseTime = srm->endOfService->second;
-                preemptActive = 1;
+                *preemptPhase = 0x01<<(srm->request.requestedAction->buf[0]-1);
+                return 1;
             }
         }
     }
-    return preemptActive;
+    return 0;
 }
 
 int readConfig(void)

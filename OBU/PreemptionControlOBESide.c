@@ -109,8 +109,8 @@ int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID,int *
             preemptionRouteTable[Row_index].coloumnOrder,
             preemptionRouteTable[Row_index].linkID,
             preemptionRouteTable[Row_index].intersectionID,
-            preemptionRouteTable[Row_index].intersectionLatitude,
             preemptionRouteTable[Row_index].intersectionLongitude,
+            preemptionRouteTable[Row_index].intersectionLatitude ,
             preemptionRouteTable[Row_index].phaseNum,
             preemptionRouteTable[Row_index].distanceThreshold);
 

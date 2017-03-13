@@ -123,7 +123,8 @@ int initMapMatch()
 
         int i = 0;
 
-        while (fscanf(nodeFile,"%d,%lf,%lf\n", &mapNodes[i].id, &mapNodes[i].P.lat, &mapNodes[i].P.lon) == 3)
+        fscanf(nodeFile,"%*[^\n]");
+        while (fscanf(nodeFile,"%d,%lf,%lf%*[^\n]", &mapNodes[i].id, &mapNodes[i].P.lat, &mapNodes[i].P.lon) == 3)
         {
             printf("Node %d info: id %d, lat %.6f, lon %.6f\n", i, mapNodes[i].id, mapNodes[i].P.lat, mapNodes[i].P.lon);
             i++;
@@ -150,7 +151,9 @@ int initMapMatch()
         int i = 0;
         int startNode, endNode;
 
-        while (fscanf(linkFile,"%d,%d,%d\n", &mapLinks[i].id, &startNode, &endNode) == 3)
+        fscanf(linkFile,"%*[^\n]");
+
+        while (fscanf(linkFile,"%d,%d,%d%*[^\n]", &mapLinks[i].id, &startNode, &endNode) == 3)
         {
             int j;
             mapLinks[i].startNodeIndex = -1;

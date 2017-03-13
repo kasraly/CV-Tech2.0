@@ -15,6 +15,7 @@ typedef struct preemptionRouteColumn {
 
 int initPreemption(int);
 int closePreemption();
-int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID, int *reqPhase); // perform preemptionStrategy according to location and intersectrion info
+int preemptionStrategy(GPSData *gpsData, int linkID_g,int *intersectionID, int *reqPhase, double *dist2ApprInters);
+// perform preemption Strategy according to location and intersectrion info
 double distance_calc(double lat1, double lon1, double lat2, double lon2, double elev);
 //double distanceCalcSimple(double lat1, double lon1, double lat2, double lon2);

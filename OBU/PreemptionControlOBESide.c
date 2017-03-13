@@ -84,7 +84,7 @@ int initPreemption(int distThd)
     return 0;
 }
 
-int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID, int *reqPhase)
+int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID,int *reqPhase, double *dist2ApprInters)
 {
     int Row_index;
 
@@ -122,8 +122,11 @@ int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID, int 
                                    preemptionRouteTable[Row_index].intersectionLatitude,
                                    preemptionRouteTable[Row_index].intersectionLongitude,
                                    gpsData->altitude);
+
     printf("Distance = %f\n",dist2ApproachingIntersection);
-//        dist2ApproachingIntersection = 900;
+
+    //dist2ApproachingIntersection = 200;
+
     if (dist2ApproachingIntersection < preempDistance2IntersectionThreshold)
     {
 

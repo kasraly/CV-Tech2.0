@@ -30,12 +30,15 @@
 #include "ProbeDataManagement.h"
 #include "BasicSafetyMessageVerbose.h"
 #include "PreemptionControlOBESide.h"
+#include "SmartphoneMsgPro.h"
+#include "MultiClientSocket.h"
 
 // #include "ControllerLib.h"
 #define MIN_INTERVAL 0.1 //seconds
 #define TIME_STEP 1 //seconds TIMER1, sending broadcast per 1 second
 #define TIMER2_MAPMATCHING 1 // map matching callback
 #define TIMER3_SRMGE4PRE 1 // message genarating, per second
+#define TIMER4_PHONEMSG 1 //message to phone
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
 
@@ -69,6 +72,14 @@ unsigned char  endOfServiceSecCount = 0;
 //global variables for Preemption control
 int preemptionControlDurationTime = 5;
 int preempDistance2IntersectionThreshold = 800;
+
+// Smartphone message
+char TCPsmartPhoneMsg[256]; // TCPSmartphoneMsag
+char TCPsmartPhoneMsg_gene[256]; // TCPSmartphoneMsag
+struct PhoneMsg SmartphoneMsg;
+static int TCPsendSmartPhoneMsg = 1; // TCP sends to smartphone
+double dist2ApprInters = 0;
+int reqPhase_g = 0;
 
 
 GPSData gpsData;
@@ -105,6 +116,7 @@ int buildWMEApplicationRequest();
 
 int buildSRMPacket(int intersectionID, int reqPhase);
 int buildSPATPacket();
+int processSPAT(SPAT_t *spat, int *preemptPhase);
 
 void sig_int(void);
 void sig_term(void);
@@ -144,6 +156,7 @@ int main()
 
         initDsrc(); // initialize the DSRC channels and invoke the drivers for sending and recieving
 
+        initSocket(); //initialize socket for communication with OBE and Smartphone.
 //        initController(controllerIP, controllerSnmpPort);
 
         gpsSockFd = gpsc_connect(gpsAddr);
@@ -157,6 +170,9 @@ int main()
         signal(SIGINT,(void *)sig_int);
         signal(SIGTERM,(void *)sig_term);
 
+        // smartphone initinization
+
+
     }
 
 
@@ -165,6 +181,7 @@ int main()
         static int counter = 0;
         static int counter2 = 0;
         static int counter3 = 0;
+        static int counter4 = 0;
 
         gettimeofday(&currentTimeTV, NULL);
         currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
@@ -176,7 +193,10 @@ int main()
             counter ++;
             counter2 ++;
             counter3 ++;
+            counter4 ++;
 
+            acceptConnection();
+            //regularly to accept new connection from smartphones and close the lost connections
 
             /*GPS reading*/
             if (counter >= (int)(TIME_STEP/MIN_INTERVAL)) // GPS reading per 1 second
@@ -239,12 +259,12 @@ int main()
                 printf("Map matching ok\n");
 
                 float linkStartDistance;
-                linkID_g = mapMatch(&gpsData, &linkStartDistance);
+                //linkID_g = mapMatch(&gpsData, &linkStartDistance);
 
                 printf("MapMatch matched gps point to link %d, distance from link start %f\n",linkID_g, linkStartDistance);
 
 //                fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
-//                linkID_g = 1094; // for demo purpose, the map macting is still  under constroctions.
+               linkID_g = 1094; // for demo purpose, the map macting is still  under constroctions.
             }
 
             if (counter3 >= (int)(TIMER3_SRMGE4PRE/MIN_INTERVAL)) // message generating
@@ -258,10 +278,11 @@ int main()
                 int intersectionID;
                 int reqPhase;
 
-
-                if (srmActive = preemptionStrategy(&gpsData, linkID_g, &intersectionID, &reqPhase))
+                if (srmActive = preemptionStrategy(&gpsData, linkID_g,&intersectionID, &reqPhase, &dist2ApprInters))
                 {
                     buildSRMPacket(intersectionID, reqPhase);
+                    reqPhase_g = reqPhase;
+
                     printf("Sending ok \n");
                     //send the DSRC message
                     {
@@ -286,6 +307,24 @@ int main()
                     }
                 }
             }
+
+            if (counter4 >= (int)(TIMER4_PHONEMSG/MIN_INTERVAL)) // message generating
+            {
+                counter4 = 0;
+                if (TCPsendSmartPhoneMsg == 1){
+                    // memcpy(addr1,s,strlen(s));
+                    if ( strcmp(TCPsmartPhoneMsg,TCPsmartPhoneMsg_gene) != 0 ) {
+                        printf( "2 Original Message: %s",  TCPsmartPhoneMsg_gene );
+                        printf( "3 Chenged  Message: %s",  TCPsmartPhoneMsg );
+                    }
+                    else{
+                        printf("3 Sent     Message: %s\n",TCPsmartPhoneMsg);
+                    }
+
+                    sendToClients(TCPsmartPhoneMsg);
+                }
+            }
+
         }
 
         /* receving function part*/
@@ -310,12 +349,15 @@ int main()
                         SPAT_t *spatRcv = (SPAT_t *)rxmsg.structure;
                         printf("Received Soignal Phase and Timing Message, Mesage ID %d\n\v", (int)spatRcv->msgID.buf[0]);
                         xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
+
+                        processSPAT(spatRcv, &reqPhase_g);
                     }
                 }
 
-
-
             }
+        SPAT_t *spatRcv; //for test
+        reqPhase_g = 5;
+        processSPAT(spatRcv, &reqPhase_g); // for test
 
         }
 
@@ -352,6 +394,7 @@ void closeAll(void)
     //closeController();
     gpsc_close_sock();
     cleanMapMatch();
+    closeSockets();
     closePreemption();
     signal(SIGINT,SIG_DFL);
     printf("\n\nPackets Sent =  %llu\n",packetsTx);
@@ -809,4 +852,64 @@ int updateGPSCourse(GPSData *gpsData)
         return 0;
     }
 
+}
+
+
+int processSPAT(SPAT_t *spat, int *preemptPhase)
+{
+//       printf("We get total %d intersections\n",spat->intersections.list.count);
+//       printf("We get all %d phase in intersection 1. \n",spat->intersections.list.array[0].states.list.count);
+//        int aaa = spat->intersections.count;
+
+//        int aaa = spat->intersections.list.count;
+
+//        printf("%d",spat->intersections.list.count);
+
+        SmartphoneMsg.speed = gpsData.speed*3.6;
+//        SmartphoneMsg.SenderID_1hopConnected = srm->request.id.buf[0]; //???
+        SmartphoneMsg.SenderID_1hopConnected = 5; //???
+        SmartphoneMsg.Distance_1hopConnected = dist2ApprInters;
+
+        //SPAT
+        SmartphoneMsg.PhaseStatus = 1;
+        SmartphoneMsg.PhaseTiming = 12;
+//        SmartphoneMsg.PhaseStatus = spat->intersections.array[0]->states.array[preemptPhase]->currState;  // just for tests, 0 has been defined all red.
+//        SmartphoneMsg.PhaseTiming = spat->intersections.array[0]->states.array[preemptPhase]->timeToChange;
+
+        //printf("We are inside the SPAT process\n");
+
+        sprintf(TCPsmartPhoneMsg, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
+                SmartphoneMsg.speed,
+        // SPaT
+                SmartphoneMsg.PhaseStatus,
+           (int)SmartphoneMsg.PhaseTiming,
+
+       // Advisory Speed Warning
+                SmartphoneMsg.ASW, // state of VSL: 0-no VSL, 1-Advisory Speed Limit ahead, 2-Driving on advisory speed segment and driving below VSL; 3-Driving on advisory speed segment and driving above VSL
+                SmartphoneMsg.ASWdist11, // distance from vehicle location to advisory speed start point at t1 timestamp, in meters
+                SmartphoneMsg.VSL, // VSL value in kph
+        // Curve Speed Warning
+                SmartphoneMsg.CSW , // state of CAS: 0-no CAS, 1-Curve Speed ahead, 2-Driving on curve speed segment and driving below CAS; 3-Driving on curve speed segment and driving above CAS
+                SmartphoneMsg.CSWdist11, // distance from vehicle location to curve speed start point at t1 timestamp, in meters
+                SmartphoneMsg.CAS, // curve speed value in kph
+        // High Collision Location Warning
+                SmartphoneMsg.HCW, // state of High collsion warning, 0-no HCL, 1-HCL ahead
+                SmartphoneMsg.dist1, // distance from vehicle location to HCL location at t1 timestamp
+        // Following-too-close Warning
+                SmartphoneMsg.FTCW,
+                SmartphoneMsg.TTC, // Time to collision, in seconds
+        // Pedestrian Warning
+                SmartphoneMsg.PedW,
+                //dsrcm.PedWarning,// Pedestrian warning status, 0-no pedestrian warning, 1- pedestrian nearby with 10m<dist<20m, 2-pedestrian too close with dist<10m
+        //once connected to a decvice, show the ID and distance
+                SmartphoneMsg.SenderID_1hopConnected,
+           (int)SmartphoneMsg.Distance_1hopConnected
+                );
+
+//        printf("1 TCP gene Message: %s",TCPsmartPhoneMsg);
+        strncpy(TCPsmartPhoneMsg_gene,TCPsmartPhoneMsg,sizeof(TCPsmartPhoneMsg)); // copy string for future verifying
+//        printf("2 TCPsmartPhoneMsg Message: %s",TCPsmartPhoneMsg_gene);
+        memset(&SmartphoneMsg,0,sizeof(SmartphoneMsg)); //reset all varibales to zeros after sending
+
+        return 0;
 }

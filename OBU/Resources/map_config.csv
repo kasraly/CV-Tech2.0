@@ -1,3 +1,4 @@
-Links,3,
-Nodes,3,
-
+Links,82,
+Nodes,46,
+HeadingThd,45,
+DistHyst,0.0001, //about 10 meters equivalent in degrees

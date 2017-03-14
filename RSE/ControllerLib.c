@@ -620,9 +620,15 @@ int readSPaT(SPAT_t* spat, double currentTime)
 
     }
 
+    spat->intersections.list.array[0]->states.list.count = SPAT_PHASES;
+    spat->intersections.list.array[0]->states.list.array = (MovementState_t **)calloc(SPAT_PHASES, sizeof(MovementState_t));
     printf("SPaT: \n");
     for(i=0; i<SPAT_PHASES; i++)
     {
+        spat->intersections.list.array[0]->states.list.array[i]->timeToChange = PhaseTiming[i];
+        spat->intersections.list.array[0]->states.list.array[i]->currState = (SignalLightState_t *)malloc(sizeof(SignalLightState_t));
+        spat->intersections.list.array[0]->states.list.array[i]->currState[0] = PhaseStatus[i];
+
         printf("Phase %d,\tState %d,\tTime %d,\tController Time %d,\tremainingTime %d\n",
             i+1,
             PhaseStatus[i],

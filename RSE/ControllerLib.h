@@ -11,6 +11,8 @@
 #include "SPAT.h"
 
 #define SPaT_READ_INTERVAL 1 //seconds
+#define PREEMPT_INTERVAL 1 //seconds
+
 
 //struct sockaddr_in controller_addr;
 int closeController(void);

@@ -50,7 +50,7 @@ int buildWSMRequestPacket();
 int buildWMEApplicationRequest();
 
 int buildSRMPacket();
-int buildSPATPacket();
+int buildSPATPacket(double currentTime);
 
 void sig_int(void);
 void sig_term(void);
@@ -104,18 +104,17 @@ int main()
         static float preemptPhaseTime = 0;
         static int counter = 0;
         static int spatCounter = 0;
+        static int preemptCounter = 0;
         gettimeofday(&currentTimeTV, NULL);
         currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
         if ((currentTime - previousTime) >= MIN_INTERVAL) // check if enough time is passed to broadcast new message
         {
             previousTime = previousTime + MIN_INTERVAL;
 
-            spatCounter ++;
-            if (spatCounter >= (int)(SPaT_READ_INTERVAL/MIN_INTERVAL))
+            preemptCounter++;
+            if (preemptCounter >= (int)(PREEMPT_INTERVAL/MIN_INTERVAL))
             {
-                spatCounter = 0;
-                readSPaT(0, currentTime);
-
+                preemptCounter = 0;
                 if (preemptPhaseTime > 0)
                 {
                     preemptPhaseTime -= SPaT_READ_INTERVAL;
@@ -126,8 +125,37 @@ int main()
                     preemptPhase = 0;
                 }
 
-                printf("executing Preemption algorithm with requested phase 0x%2x\n",preemptPhase);
+                printf("executing Preemption algorithm with requested phase 0x%02x\n",preemptPhase);
                 signalPreempt(preemptPhase);
+            }
+
+            spatCounter++;
+            if (spatCounter >= (int)(SPaT_READ_INTERVAL/MIN_INTERVAL))
+            {
+                spatCounter = 0;
+
+                printf("SPaT routine ...\n");
+                buildSPATPacket(currentTime);
+
+                //send the DSRC message
+                if( txWSMPacket(pid, &wsmreqTx) < 0)
+                {
+                    dropsTx++;
+                }
+                else
+                {
+                    packetsTx++;
+                    countTx++;
+                }
+
+
+                if((notxpkts != 0) && (countTx >= notxpkts))
+                    break;
+
+                printf("DSRC message Transmitted #%llu#      Drop #%llu#     len #%u#\n",
+                    packetsTx,
+                    dropsTx,
+                    wsmreqTx.data.length);
             }
 
             counter ++;
@@ -153,27 +181,6 @@ int main()
 
 
                 //buildSRMPacket();
-                buildSPATPacket();
-
-                //send the DSRC message
-                if( txWSMPacket(pid, &wsmreqTx) < 0)
-                {
-                    dropsTx++;
-                }
-                else
-                {
-                    packetsTx++;
-                    countTx++;
-                }
-
-
-                if((notxpkts != 0) && (countTx >= notxpkts))
-                    break;
-
-                printf("DSRC message Transmitted #%llu#      Drop #%llu#     len #%u#\n",
-                    packetsTx,
-                    dropsTx,
-                    wsmreqTx.data.length);
             }
         }
 
@@ -287,8 +294,9 @@ int buildWSMRequestPacket()
     return 1;
 }
 
-int buildSPATPacket()
+int buildSPATPacket(double currentTime)
 {
+    printf("Initializing SPaT Packet\n");
     static int spatCount = 0;
     asn_enc_rval_t rvalenc;
     SPAT_t *spat;
@@ -300,6 +308,20 @@ int buildSPATPacket()
     spat->msgID.size = sizeof(uint8_t);
     spat->msgID.buf[0] = DSRCmsgID_signalPhaseAndTimingMessage;
     spatCount++;
+
+    printf("populating number of intersection\n");
+    spat->intersections.list.count = 1;
+    printf("Allocating memory for intersection\n");
+    spat->intersections.list.array = (IntersectionState_t **)calloc(1,sizeof(IntersectionState_t));
+    spat->intersections.list.size = sizeof(IntersectionState_t);
+    printf("Allocating memory for intersection ID\n");
+    spat->intersections.list.array[0]->id.buf = (uint8_t *)calloc(1, sizeof(uint8_t));
+    printf("writing the id buffer size value\n");
+    spat->intersections.list.array[0]->id.size = sizeof(uint8_t) * 1;
+    printf("writing intersection ID\n");
+    spat->intersections.list.array[0]->id.buf[0] = intersectionID;
+    printf("reading SPaT from Controller\n");
+    readSPaT(spat, currentTime);
 
     rvalenc = der_encode_to_buffer(&asn_DEF_SPAT, spat, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
     if (rvalenc.encoded == -1) {

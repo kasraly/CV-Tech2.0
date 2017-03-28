@@ -867,10 +867,11 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
         }
 
         // process the info. for each intersection
-        {
-            int i=0,j=0;
+
+            int i=0,j=0,k=0;
             int intersize = 0, interID = 0;
             SignalLightState_t *statuscurrState;
+            DescriptiveName_t *statusMovementName;
             TimeMark_t statuscurrtimeToChange = 0;
 
             IntersectionState_t *intersectionstate;
@@ -900,8 +901,23 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
                     printf("The movementstate intery index is %d\n",j+1);
                     movementstate = (MovementState_t *)intersectionstate->states.list.array[j];
 
+                    // phase num, phase ID
+                    printf("size of movementName = %d\n", &(movementstate->movementName->size));
+
+//                    if( movementstate->movementName->buf != NULL){
+//                        printf("NOT NULL\n");
+//                    }
+//                    else{
+//                        printf("NULL\n");
+//                    }
+                    //memcpy(&statusMovementName->buf[0],movementstate->movementName->buf,4);
+//                    for (k = 0; k < (&(statusMovementName->size)); k++)
+//                    {
+////                        printf("%s",&(statusMovementName->buf[k]));
+//                        printf("size interation index = %d\n",k);
+//                    }
+
                     if(movementstate->currState != NULL){
-                        //memcpy(&spatmsg.mptr[j].cur_state,movementstate->currState,4);
                         statuscurrState = (movementstate->currState) ;
                         printf("currState = %ld\n",*statuscurrState);
                     }
@@ -909,13 +925,11 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
                         statuscurrtimeToChange = (uint16_t)movementstate->timeToChange ;
                         printf("timeToChange = %ld\n",statuscurrtimeToChange);
                     }
-                    //memcpy(&spatmsg.mptr[j].mintimerem,&movementstate->timeToChange,4);
-    //                spatmsg.mptr[j].mintimerem = (uint16_t)movementstate->timeToChange;
                 }
             }
 
 
-        }
+
 
 
         SmartphoneMsg.speed = gpsData.speed*3.6;
@@ -925,7 +939,9 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
 
         //SPAT
         SmartphoneMsg.PhaseStatus = 1;
-        SmartphoneMsg.PhaseTiming = 12;
+//        SmartphoneMsg.PhaseTiming = 12;
+//        SmartphoneMsg.PhaseStatus = &statuscurrState;
+        SmartphoneMsg.PhaseTiming = statuscurrtimeToChange;
 //        SmartphoneMsg.PhaseStatus = spat->intersections.array[0]->states.array[preemptPhase]->currState;  // just for tests, 0 has been defined all red.
 //        SmartphoneMsg.PhaseTiming = spat->intersections.array[0]->states.array[preemptPhase]->timeToChange;
 

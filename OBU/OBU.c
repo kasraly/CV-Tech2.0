@@ -334,14 +334,14 @@ int main()
             if (rx_ret > 0){
                 printf("Received WSMP Packet txpower= %d, rateindex=%d Packet No =#%d#\n", rxpkt.chaninfo.txpower, rxpkt.chaninfo.rate, countRx++);
 
-                { // used for identifying the SRM's status
-                    rxWSMIdentity(&rxmsg,WSMMSG_SRM); //Identify the type of received Wave Short Message.
-                    if (!rxmsg.decode_status) {
-                        SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
-                        printf("Received Signal Request Message, Mesage count %d\n\v", (int)srmRcv->msgCnt);
-                        xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
-                    }
-                }
+//                { // used for identifying the SRM's status
+//                    rxWSMIdentity(&rxmsg,WSMMSG_SRM); //Identify the type of received Wave Short Message.
+//                    if (!rxmsg.decode_status) {
+//                        SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
+//                        printf("Received Signal Request Message, Mesage count %d\n\v", (int)srmRcv->msgCnt);
+//                        //xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
+//                    }
+//                }
 
                 { // used for identifying the SPAT's status
                     rxWSMIdentity(&rxmsg,WSMMSG_SPAT); //Identify the type of received Wave Short Message.
@@ -353,12 +353,10 @@ int main()
                         processSPAT(spatRcv, &reqPhase_g);
                     }
                 }
-
             }
-        SPAT_t *spatRcv; //for test
-        reqPhase_g = 5;
-        processSPAT(spatRcv, &reqPhase_g); // for test
-
+//        SPAT_t *spatRcv; //for test
+//        reqPhase_g = 5;
+//        processSPAT(spatRcv, &reqPhase_g); // for test
         }
 
         sched_yield();
@@ -418,7 +416,7 @@ void receiveTsfTimerIndication(TSFTimer *timer)
     printf("TSF Timer: Result=%d, Timer=%llu",(u_int8_t)timer->result,(u_int64_t)timer->timer);
 }
 
-/* Function to build the Provider Service Table Entry */
+/* Transmitting : Function to build the Provider Service Table Entry */
 int buildPSTEntry(void)
 {
     //Transmitting entry
@@ -432,11 +430,11 @@ int buildPSTEntry(void)
     return 1;
 }
 
-/* Function to build the User Service Table Entry */
+/* Receiveing : Function to build the User Service Table Entry */
 int buildUSTEntry(void)
 {
     //Receiveing entry
-    entryRx.psid = 11;
+    entryRx.psid = 11; //11
     entryRx.userreqtype = 2;
     entryRx.channel = 172;
     entryRx.schaccess  = 1;
@@ -719,9 +717,9 @@ void initDsrc()
      * An OBU receives the announcement on the CCH and generally establishes communications with the provider on the specified SCH,
      * such a device is called a user.
      */
-    printf("Registering provider\n ");
+    printf("\nRegistering provider with PSID = %u\n ",entryTx.psid);
     if ( registerProvider( pid, &entryTx ) < 0 ){
-        printf("\nRegister Provider failed\n");
+        printf("Register Provider failed\n");
         removeProvider(pid, &entryTx);
         registerProvider(pid, &entryTx);
     } else {
@@ -741,7 +739,7 @@ void initDsrc()
         exit(-1);
     }
 
-    printf("Registering User %d\n", entryRx.psid);
+    printf("\nRegistering User with PSID = %d\n", entryRx.psid);
     int ret = registerUser(pid, &entryRx);
     if ( ret < 0)
     {
@@ -750,7 +748,7 @@ void initDsrc()
         printf("USER Registered %d with PSID =%u \n", registerUser(pid, &entryRx), entryRx.psid );
     }
     else
-        printf("USER Registered %d with PSID =%u \n", ret, entryRx.psid );
+        printf(" USER Registered %d with PSID =%u \n", ret, entryRx.psid );
 
 }
 
@@ -857,13 +855,68 @@ int updateGPSCourse(GPSData *gpsData)
 
 int processSPAT(SPAT_t *spat, int *preemptPhase)
 {
-//       printf("We get total %d intersections\n",spat->intersections.list.count);
-//       printf("We get all %d phase in intersection 1. \n",spat->intersections.list.array[0].states.list.count);
-//        int aaa = spat->intersections.count;
+        int TotalIntersNum = 0;
+        TotalIntersNum = spat->intersections.list.count;
+        if(TotalIntersNum != NULL){
+            //printf("NOT NULL\n");
+            printf("Number the total intersections =  %d\n", TotalIntersNum);
+            printf("We get total %d intersections\n",spat->intersections.list.count);
+        }
+        else {
+            printf("NULL\n");
+        }
 
-//        int aaa = spat->intersections.list.count;
+        // process the info. for each intersection
+        {
+            int i=0,j=0;
+            int intersize = 0, interID = 0;
+            SignalLightState_t *statuscurrState;
+            TimeMark_t statuscurrtimeToChange = 0;
 
-//        printf("%d",spat->intersections.list.count);
+            IntersectionState_t *intersectionstate;
+            MovementState_t *movementstate;
+
+            for(i=0;i<spat->intersections.list.count;i++)
+            {
+                printf("The intersections intery index is %d\n",i+1);
+                intersectionstate = (IntersectionState_t *)spat->intersections.list.array[i];
+
+                intersize = intersectionstate->id.size;
+                interID = intersectionstate->id.buf[intersize-1];
+                printf("We have got an information of intersection %d with ID = 0x%x\n",i+1,interID);
+                //memcpy(&spatmsg.intsec_id,intersectionstate->id.buf, intersectionstate->id.size);
+                //memcpy(&spatmsg.intsec_status,intersectionstate->status.buf, intersectionstate->status.size);
+
+                if(intersectionstate->timeStamp != NULL){
+                    //memcpy(&spatmsg.timestamp,intersectionstate->timeStamp,4);
+                    //printf("We have got the timesatmp info.of intersection\n");
+                }
+                //spatmsg.ts_tenths = 0;
+                //sspatmsg.movcount = intersectionstate->states.list.count;
+
+                printf("We get total %d intersectionstate\n",intersectionstate->states.list.count);
+                for(j=0;j<intersectionstate->states.list.count;j++)
+                {
+                    printf("The movementstate intery index is %d\n",j+1);
+                    movementstate = (MovementState_t *)intersectionstate->states.list.array[j];
+
+                    if(movementstate->currState != NULL){
+                        //memcpy(&spatmsg.mptr[j].cur_state,movementstate->currState,4);
+                        statuscurrState = (movementstate->currState) ;
+                        printf("currState = %ld\n",*statuscurrState);
+                    }
+                    if(movementstate->timeToChange != NULL){
+                        statuscurrtimeToChange = (uint16_t)movementstate->timeToChange ;
+                        printf("timeToChange = %ld\n",statuscurrtimeToChange);
+                    }
+                    //memcpy(&spatmsg.mptr[j].mintimerem,&movementstate->timeToChange,4);
+    //                spatmsg.mptr[j].mintimerem = (uint16_t)movementstate->timeToChange;
+                }
+            }
+
+
+        }
+
 
         SmartphoneMsg.speed = gpsData.speed*3.6;
 //        SmartphoneMsg.SenderID_1hopConnected = srm->request.id.buf[0]; //???

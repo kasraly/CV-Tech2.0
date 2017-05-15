@@ -125,13 +125,16 @@ int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID,int *
 
     printf("Distance = %f\n",dist2ApproachingIntersection);
 
-    //dist2ApproachingIntersection = 200;
+    dist2ApproachingIntersection = 200; // only for debug
+
+    printf("After debug's injection, Distance = %f\n",dist2ApproachingIntersection);
 
     if (dist2ApproachingIntersection < preempDistance2IntersectionThreshold)
     {
 
         *intersectionID = preemptionRouteTable[Row_index].intersectionID;
         *reqPhase = preemptionRouteTable[Row_index].phaseNum; // phase number
+        *dist2ApprInters = dist2ApproachingIntersection;
 
         printf("found an associated link and enable broadcast function\n");
         return 1; //broadcast is enabled

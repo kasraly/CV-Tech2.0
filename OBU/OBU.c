@@ -7,12 +7,13 @@
        3. the map macting part is still  under constroctions.
 170309 1.loading table. 2.searching copresponding Intersection Info
        3. perform preemption control strategy
-
-
+170329 1. finised the SPaT reading and showing the results in the terminal
+170410 1. need to connect these mapMatching results and a phasen umber searching part.
+170418 1. test SPaT for new RSE codes
+170419 1.updated the current states and timeTochange variable to real-time variable [successed]
 */
 
 #define _GNU_SOURCE
-
 
 #define OFFLINE
 //#undef OFFLINE
@@ -32,6 +33,7 @@
 #include "PreemptionControlOBESide.h"
 #include "SmartphoneMsgPro.h"
 #include "MultiClientSocket.h"
+#include "MapData.h"
 
 // #include "ControllerLib.h"
 #define MIN_INTERVAL 0.1 //seconds
@@ -42,9 +44,7 @@
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
 
-
 // testing Git
-
 // BSMBlob, selected from the BasicSafetyMessageVersbose.h file
 typedef struct BSMblobVerbose {
     MsgCount_t	 msgCnt;
@@ -66,6 +66,7 @@ SignalRequestMsg_t *srm;
 int linkID_g = 0;
 double distanceToPoint_g;
 double intersectionID_g;
+WSMMessage rxmsg_sendSRM;
 
 unsigned char  endOfServiceSecCount = 0;
 
@@ -259,21 +260,19 @@ int main()
                 printf("Map matching ok\n");
 
                 float linkStartDistance;
-                //linkID_g = mapMatch(&gpsData, &linkStartDistance);
+                linkID_g = mapMatch(&gpsData, &linkStartDistance);
 
-                printf("MapMatch matched gps point to link %d, distance from link start %f\n",linkID_g, linkStartDistance);
+                printf("MapMatch matched gps point to link %d, distance from link start %f\n",linkID_g,linkStartDistance);
 
 //                fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
-               linkID_g = 1094; // for demo purpose, the map macting is still  under constroctions.
+                linkID_g = 1094; // for demo purpose, the map macting is still  under constroctions.
             }
 
-            if (counter3 >= (int)(TIMER3_SRMGE4PRE/MIN_INTERVAL)) // message generating
+            if (counter3 >= (int)(TIMER3_SRMGE4PRE/MIN_INTERVAL)) // message generating for preemption control
             {
                 counter3 = 0;
-//                fullMapMatching (&gpsData, &linkID_g, &distanceToPoint_g, &intersectionID_g );
-                //printf(" sending ok 11 \n");
                 printf("Link ID: %d\n",linkID_g);
-//                parsePreemptionRoute(linkID_g);
+
                 int srmActive;
                 int intersectionID;
                 int reqPhase;
@@ -282,16 +281,16 @@ int main()
                 {
                     buildSRMPacket(intersectionID, reqPhase);
                     reqPhase_g = reqPhase;
+                    printf("intersectionID=%d,reqPhase=%d,and dist2ApprInters=%f\n",
+                            intersectionID,reqPhase,dist2ApprInters);
 
                     printf("Sending ok \n");
                     //send the DSRC message
                     {
-                        if( txWSMPacket(pid, &wsmreqTx) < 0)
-                        {
+                        if( txWSMPacket(pid, &wsmreqTx) < 0){
                             dropsTx++;
                         }
-                        else
-                        {
+                        else{
                             packetsTx++;
                             countTx++;
                         }
@@ -315,13 +314,25 @@ int main()
                     // memcpy(addr1,s,strlen(s));
                     if ( strcmp(TCPsmartPhoneMsg,TCPsmartPhoneMsg_gene) != 0 ) {
                         printf( "2 Original Message: %s",  TCPsmartPhoneMsg_gene );
-                        printf( "3 Chenged  Message: %s",  TCPsmartPhoneMsg );
+                        printf( "3 Changed  Message: %s",  TCPsmartPhoneMsg );
                     }
                     else{
-                        printf("3 Sent     Message: %s\n",TCPsmartPhoneMsg);
+                        if (TCPsmartPhoneMsg[0] == '\0')
+                        {
+                            //printf("TCPsmartPhoneMsg[0] = %d \n",TCPsmartPhoneMsg[0]);
+                            sprintf(TCPsmartPhoneMsg, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
+                                                       53,3,12,0,0,0,0,0,0,0,0,0,0.000000,0,5,200);
+                            printf("3 Sent     Message: %s[DEFAULT]\n",TCPsmartPhoneMsg);
+                        }
+                        else
+                        {
+                            printf("3 Sent     Message: %s[REAL-TIME]\n",TCPsmartPhoneMsg);
+                        }
+
                     }
 
                     sendToClients(TCPsmartPhoneMsg);
+                    TCPsmartPhoneMsg[0] = 0; // initial the sent message
                 }
             }
 
@@ -330,29 +341,66 @@ int main()
         /* receving function part*/
         {
             //rx_ret = rxWSMPacket(pid, &rxpkt);
+
             rx_ret = rxWSMMessage(pid, &rxmsg); /* Function to receive the Data from TX application */
             if (rx_ret > 0){
                 printf("Received WSMP Packet txpower= %d, rateindex=%d Packet No =#%d#\n", rxpkt.chaninfo.txpower, rxpkt.chaninfo.rate, countRx++);
+                rxmsg.decode_status = 2; // initial the decode_status to 2 which is not identical to 0 - sucess
 
-//                { // used for identifying the SRM's status
-//                    rxWSMIdentity(&rxmsg,WSMMSG_SRM); //Identify the type of received Wave Short Message.
-//                    if (!rxmsg.decode_status) {
-//                        SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
-//                        printf("Received Signal Request Message, Mesage count %d\n\v", (int)srmRcv->msgCnt);
-//                        //xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
-//                    }
-//                }
+                { // used for identifying the SRM's status
+                    rxWSMIdentity(&rxmsg,WSMMSG_SRM); //Identify the type of received Wave Short Message.
+                    if (!rxmsg.decode_status) {
+                        SignalRequestMsg_t *srmRcv = (SignalRequestMsg_t *)rxmsg.structure;
+                        if ((int)srmRcv->msgID.buf[0] == 14){
+                            printf("Received Signal Request Message (SRM), Mesage ID %d\n\v", (int)srmRcv->msgID.buf[0]);
+                            xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
+                        }
+                        else{
+                            printf("Received NOT SRM, Mesage ID %d\n\v", (int)srmRcv->msgID.buf[0]);
+                        }
+                    }
+                }
 
                 { // used for identifying the SPAT's status
                     rxWSMIdentity(&rxmsg,WSMMSG_SPAT); //Identify the type of received Wave Short Message.
                     if (!rxmsg.decode_status) {
                         SPAT_t *spatRcv = (SPAT_t *)rxmsg.structure;
-                        printf("Received Soignal Phase and Timing Message, Mesage ID %d\n\v", (int)spatRcv->msgID.buf[0]);
-                        xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
+                        if ((int)spatRcv->msgID.buf[0] == 13){
+                            printf("Received Signal Phase and Timing Message (SPAT), Mesage ID %d\n\v", (int)spatRcv->msgID.buf[0]);
+                            xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
 
-                        processSPAT(spatRcv, &reqPhase_g);
+                            //reqPhase_g = 0; // foe debug
+                            processSPAT(spatRcv, &reqPhase_g);
+                        }
+                        else{
+                            printf("Received NOT SPAT, Mesage ID %d\n\v", (int)spatRcv->msgID.buf[0]);
+                        }
+
                     }
                 }
+
+                { // used for identifying the SPAT's status
+                    rxWSMIdentity(&rxmsg,WSMMSG_MAPDATA); //Identify the type of received Wave Short Message.
+                    if (!rxmsg.decode_status) {
+                        MapData_t *mapDataRcv = (MapData_t *)rxmsg.structure;
+                        if ((int)mapDataRcv->msgID.buf[0] == 7){
+                            printf("Received MAP data (MapData), Mesage ID %d\n\v", (int)mapDataRcv->msgID.buf[0]);
+                            xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
+
+                            //reqPhase_g = 0; // foe debug
+                            //processSPAT(spatRcv, &reqPhase_g);
+                        }
+                        else{
+                            printf("Received NOT MapData, Mesage ID %d\n\v", (int)mapDataRcv->msgID.buf[0]);
+                        }
+
+                    }
+                }
+
+            }
+            else
+            {
+                //printf("DEBUG did not receive anythings\n");
             }
 //        SPAT_t *spatRcv; //for test
 //        reqPhase_g = 5;
@@ -459,6 +507,19 @@ int buildWSMRequestPacket()
     return 1;
 }
 
+int  buildWMEApplicationRequest()
+{
+    wreqTx.psid = 10 ;
+    printf(" WME App Req %d \n",wreqTx.psid);
+    //strncpy(wreq.acm.contents, entry.acm.contents, OCTET_MAX_LENGTH);
+    //printf(" WME App Req %s \n",wreq.acm.contents);
+    //wreq.acm.length = entry.acm.length;
+    wreqTx.repeats = 1;
+    wreqTx.persistence = 1;
+    wreqTx.channel = 172;
+    return 1;
+}
+
 int buildSPATPacket()
 {
     static int spatCount = 0;
@@ -520,6 +581,7 @@ int buildSRMPacket(int intersectionID, int reqPhase)
             srm->request.requestedAction->buf = (uint8_t *) calloc(1, sizeof(uint8_t));
             srm->request.requestedAction->size = sizeof(uint8_t);
             srm->request.requestedAction->buf[0] = reqPhase; // phase number
+            //printf("debug infor.\n");
 
         }
 
@@ -657,6 +719,12 @@ int buildSRMPacket(int intersectionID, int reqPhase)
 
     }
 
+//    rxmsg_sendSRM.structure = (SignalRequestMsg_t *) calloc(1,sizeof(SignalRequestMsg_t));
+//    rxmsg_sendSRM.structure = srm;
+//    rxmsg_sendSRM.type =  WSMMSG_SRM;
+//    xml_print(rxmsg_sendSRM);
+//    printf("Structure successfully\n");
+
     // encode part for encoding them to ASN.1 standard
     rvalenc = der_encode_to_buffer(&asn_DEF_SignalRequestMsg, srm, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
     if (rvalenc.encoded == -1) {
@@ -668,21 +736,12 @@ int buildSRMPacket(int intersectionID, int reqPhase)
         asn_DEF_SignalRequestMsg.free_struct (&asn_DEF_SignalRequestMsg, srm, 0); // release the allocated memory
     }
 
+
+
     return 1;
 }
 
-int  buildWMEApplicationRequest()
-{
-    wreqTx.psid = 10 ;
-    printf(" WME App Req %d \n",wreqTx.psid);
-    //strncpy(wreq.acm.contents, entry.acm.contents, OCTET_MAX_LENGTH);
-    //printf(" WME App Req %s \n",wreq.acm.contents);
-    //wreq.acm.length = entry.acm.length;
-    wreqTx.repeats = 1;
-    wreqTx.persistence = 1;
-    wreqTx.channel = 172;
-    return 1;
-}
+
 
 void initDsrc()
 {
@@ -824,15 +883,6 @@ int readConfig(void) //  used for reading things from files
 
 int fullMapMatching (GPSData *gpsData, int * linkIDtmp, double *distanceToPoint, double *intersectionIDtmp )
 {
-    //printf("####21\n");
-    if (( gpsData->actual_time ) > 1473708847) //5
-    {
-        *linkIDtmp = 0;
-        *distanceToPoint = 0;
-        *intersectionIDtmp = 0;
-        return 0; // -1
-    }
-
     return 1;
 }
 
@@ -869,10 +919,14 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
         // process the info. for each intersection
 
             int i=0,j=0,k=0;
-            int intersize = 0, interID = 0;
+            int interIDsize = 0, interID = 0;
+            int phaseNumsize = 0, CurrentPahseNum = 0;
             SignalLightState_t *statuscurrState;
             DescriptiveName_t *statusMovementName;
             TimeMark_t statuscurrtimeToChange = 0;
+
+            SignalLightState_t *TargetPhasecurrState;
+            TimeMark_t TargetPhasecurrtimeToChange = 0;
 
             IntersectionState_t *intersectionstate;
             MovementState_t *movementstate;
@@ -881,72 +935,55 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
             {
                 printf("The intersections intery index is %d\n",i+1);
                 intersectionstate = (IntersectionState_t *)spat->intersections.list.array[i];
-
-                intersize = intersectionstate->id.size;
-                interID = intersectionstate->id.buf[intersize-1];
+                interIDsize = intersectionstate->id.size;
+                interID = intersectionstate->id.buf[interIDsize-1];
                 printf("We have got an information of intersection %d with ID = 0x%x\n",i+1,interID);
-                //memcpy(&spatmsg.intsec_id,intersectionstate->id.buf, intersectionstate->id.size);
-                //memcpy(&spatmsg.intsec_status,intersectionstate->status.buf, intersectionstate->status.size);
 
-                if(intersectionstate->timeStamp != NULL){
-                    //memcpy(&spatmsg.timestamp,intersectionstate->timeStamp,4);
-                    //printf("We have got the timesatmp info.of intersection\n");
-                }
-                //spatmsg.ts_tenths = 0;
-                //sspatmsg.movcount = intersectionstate->states.list.count;
-
-                printf("We get total %d intersectionstate\n",intersectionstate->states.list.count);
-                for(j=0;j<intersectionstate->states.list.count;j++)
+                printf("We get total %d intersectionstate/phases\n",intersectionstate->states.list.count);
+                for(j=0;j < intersectionstate->states.list.count;j++)
                 {
                     printf("The movementstate intery index is %d\n",j+1);
                     movementstate = (MovementState_t *)intersectionstate->states.list.array[j];
 
                     // phase num, phase ID
-                    printf("size of movementName = %d\n", &(movementstate->movementName->size));
-
-//                    if( movementstate->movementName->buf != NULL){
-//                        printf("NOT NULL\n");
-//                    }
-//                    else{
-//                        printf("NULL\n");
-//                    }
-                    //memcpy(&statusMovementName->buf[0],movementstate->movementName->buf,4);
-//                    for (k = 0; k < (&(statusMovementName->size)); k++)
-//                    {
-////                        printf("%s",&(statusMovementName->buf[k]));
-//                        printf("size interation index = %d\n",k);
-//                    }
+                    phaseNumsize = movementstate->movementName->size;
+                    CurrentPahseNum = movementstate->movementName->buf[phaseNumsize-1];
+                   // printf("Size of movementName = %d\n", phaseNumsize);
+                    printf("Current phase num = %d,",CurrentPahseNum);
 
                     if(movementstate->currState != NULL){
-                        statuscurrState = (movementstate->currState) ;
-                        printf("currState = %ld\n",*statuscurrState);
+                        statuscurrState = movementstate->currState;
+                        printf("currState = %ld,",*statuscurrState);
                     }
                     if(movementstate->timeToChange != NULL){
                         statuscurrtimeToChange = (uint16_t)movementstate->timeToChange ;
                         printf("timeToChange = %ld\n",statuscurrtimeToChange);
                     }
+
+                    //printf("Target phase = %d\n",*preemptPhase);
+                    if( ((uint8_t)*preemptPhase) == CurrentPahseNum)
+                    {
+                        TargetPhasecurrState = movementstate->currState;
+                        TargetPhasecurrtimeToChange = (uint16_t)movementstate->timeToChange;
+                        printf("\nFind the target phase %d,States = %ld,timeToChange = %ld\n",
+                               CurrentPahseNum,*TargetPhasecurrState,TargetPhasecurrtimeToChange);
+                    }
+                    else{
+                        printf("\nWarning !!! Not the target phase[%d]-_-.\n",*preemptPhase);
+                    }
                 }
             }
 
 
-
-
-
         SmartphoneMsg.speed = gpsData.speed*3.6;
-//        SmartphoneMsg.SenderID_1hopConnected = srm->request.id.buf[0]; //???
-        SmartphoneMsg.SenderID_1hopConnected = 5; //???
+        SmartphoneMsg.SenderID_1hopConnected = 5; // interID; 5 for debug
         SmartphoneMsg.Distance_1hopConnected = dist2ApprInters;
 
         //SPAT
-        SmartphoneMsg.PhaseStatus = 1;
-//        SmartphoneMsg.PhaseTiming = 12;
-//        SmartphoneMsg.PhaseStatus = &statuscurrState;
-        SmartphoneMsg.PhaseTiming = statuscurrtimeToChange;
-//        SmartphoneMsg.PhaseStatus = spat->intersections.array[0]->states.array[preemptPhase]->currState;  // just for tests, 0 has been defined all red.
-//        SmartphoneMsg.PhaseTiming = spat->intersections.array[0]->states.array[preemptPhase]->timeToChange;
+        SmartphoneMsg.PhaseStatus = *TargetPhasecurrState;// *statuscurrState;, 1 for debug
+        SmartphoneMsg.PhaseTiming = TargetPhasecurrtimeToChange; //statuscurrtimeToChange;
 
-        //printf("We are inside the SPAT process\n");
-
+        // TCP cummunication for smartPhone's Msg
         sprintf(TCPsmartPhoneMsg, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
                 SmartphoneMsg.speed,
         // SPaT

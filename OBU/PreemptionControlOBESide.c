@@ -105,7 +105,7 @@ int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID,int *
         return 0; //return value 1 is to indicate no need for sending request
     }
 
-    printf("InterInfo:%d,%d,%d,%.6f,%.6f,%d,%d\n",
+    printf("InterInfo:%d,%d,%d,%.6f,%.6f,%d,%d,\n",
             preemptionRouteTable[Row_index].coloumnOrder,
             preemptionRouteTable[Row_index].linkID,
             preemptionRouteTable[Row_index].intersectionID,
@@ -125,11 +125,18 @@ int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID,int *
 
     printf("Distance = %f\n",dist2ApproachingIntersection);
 
-    dist2ApproachingIntersection = 200; // only for debug
+    if (IN_5TH_LAB) {
+        printf("Inside lab,");
+        dist2ApproachingIntersection = 15; // only for debugſ
+    }
+    else {
+        printf("Outside lab,");
+    }
 
     printf("After debug's injection, Distance = %f\n",dist2ApproachingIntersection);
 
-    if (dist2ApproachingIntersection < preempDistance2IntersectionThreshold)
+    // if (dist2ApproachingIntersection < preempDistance2IntersectionThreshold )
+    if ((dist2ApproachingIntersection < preempDistance2IntersectionThreshold ) && (0<dist2ApproachingIntersection) )
     {
 
         *intersectionID = preemptionRouteTable[Row_index].intersectionID;
@@ -137,12 +144,20 @@ int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID,int *
         *dist2ApprInters = dist2ApproachingIntersection;
 
         printf("found an associated link and enable broadcast function\n");
-        return 1; //broadcast is enabled
+        //return 1; //broadcast is enabled
+        return PREEMPTION_ENABLE; //broadcast is enabled
     }
     else
     {
+
+        // always sending SPAT
+        *intersectionID = preemptionRouteTable[Row_index].intersectionID;
+        *reqPhase = preemptionRouteTable[Row_index].phaseNum; // phase number
+        *dist2ApprInters = dist2ApproachingIntersection;
+
         printf("found an associated link beyond the threshold, no need for signal broadcast\n");
         return 0;
+        return PREEMPTION_DISABLE; //broadcast is not enabled
     }
 }
 

@@ -1,6 +1,9 @@
 // typedefine for preemption control
 
+#include "OBU.h"
 #include "gpsc_probe.h"
+#define PREEMPTION_ENABLE 1
+#define PREEMPTION_DISABLE 0
 
 // preemptionRoute table
 typedef struct preemptionRouteColumn {

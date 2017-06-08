@@ -242,7 +242,7 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
     }
 
 //    printf("DEBUG 21 Map matching ok\n");
-//    printf("DEBUG matchLinkIndex = %d\n",matchLinkIndex);
+    printf("DEBUG matchLinkIndex = %d\n",matchLinkIndex);
 //    printf("DEBUG 22 Map matching ok\n");
 
     return mapLinks[matchLinkIndex].id;

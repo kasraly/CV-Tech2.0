@@ -1,5 +1,10 @@
-OBU_GPSlog/OBU_GPSlog.depend
-OBU_GPSlog/obj/gpsc_probe.o
-OBU_GPSlog/obj/OBU_GPSlog.o
-OBU_GPSlog/OBU_GPSlog.layout
-OBU_GPSlog/obj/
+
+*.depend
+
+*.o
+
+TerminalCommands\.txt
+
+*.layout
+
+OBU/obj/

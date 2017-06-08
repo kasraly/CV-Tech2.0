@@ -123,7 +123,8 @@ int initMapMatch()
 
         int i = 0;
 
-        while (fscanf(nodeFile,"%d,%lf,%lf\n", &mapNodes[i].id, &mapNodes[i].P.lat, &mapNodes[i].P.lon) == 3)
+        fscanf(nodeFile,"%*[^\n]");
+        while (fscanf(nodeFile,"%d,%lf,%lf%*[^\n]", &mapNodes[i].id, &mapNodes[i].P.lat, &mapNodes[i].P.lon) == 3)
         {
             printf("Node %d info: id %d, lat %.6f, lon %.6f\n", i, mapNodes[i].id, mapNodes[i].P.lat, mapNodes[i].P.lon);
             i++;
@@ -150,7 +151,9 @@ int initMapMatch()
         int i = 0;
         int startNode, endNode;
 
-        while (fscanf(linkFile,"%d,%d,%d\n", &mapLinks[i].id, &startNode, &endNode) == 3)
+        fscanf(linkFile,"%*[^\n]");
+
+        while (fscanf(linkFile,"%d,%d,%d%*[^\n]", &mapLinks[i].id, &startNode, &endNode) == 3)
         {
             int j;
             mapLinks[i].startNodeIndex = -1;
@@ -190,7 +193,7 @@ int initMapMatch()
                 break;
         }
         numLinks = i;
-        printf("Total links: %d", numLinks);
+        printf("Total links: %d\n", numLinks);
         fclose(linkFile);
     }
     return 0;
@@ -237,6 +240,10 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
             }
         }
     }
+
+//    printf("DEBUG 21 Map matching ok\n");
+    printf("DEBUG matchLinkIndex = %d\n",matchLinkIndex);
+//    printf("DEBUG 22 Map matching ok\n");
 
     return mapLinks[matchLinkIndex].id;
 }

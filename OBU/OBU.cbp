@@ -38,6 +38,10 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="MapMatch.h" />
+		<Unit filename="MultiClientSocket.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="MultiClientSocket.h" />
 		<Unit filename="OBU.c">
 			<Option compilerVar="CC" />
 		</Unit>
@@ -45,6 +49,7 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="PreemptionControlOBESide.h" />
+		<Unit filename="SmartphoneMsgPro.h" />
 		<Unit filename="gpsc_probe.c">
 			<Option compilerVar="CC" />
 		</Unit>

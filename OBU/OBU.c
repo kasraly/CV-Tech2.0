@@ -40,10 +40,9 @@
 #define MIN_INTERVAL 0.1 //seconds
 #define TIME_STEP 1 //seconds TIMER1, sending broadcast per 1 second
 #define TIMER2_MAPMATCHING 1 // map matching callback
-#define TIMER3_SRMGE4PRE 1 // message genarating, per second
+#define TIMER3_SRMGE4PRE 0.1 // message genarating, per second
 #define TIMER4_PHONEMSG 1 //message to phone
-#define TIMER5_LABLOOP 120 // test loop in 5th lab
-// #define IN_5TH_LAB 1
+#define TIMER5_LABLOOP 15//120 // test loop in 5th lab
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
 
@@ -74,10 +73,10 @@ double intersectionID_g;
 WSMMessage rxmsg_sendSRM;
 
 unsigned char  endOfServiceSecCount = 0;
+//global predefined variables for Preemption control
+extern int preemptionControlDurationTime;
+extern int preempDistance2IntersectionThreshold_Predefined;
 
-//global variables for Preemption control
-int preemptionControlDurationTime = 5;
-int preempDistance2IntersectionThreshold = 20;
 
 // Smartphone message
 char TCPsmartPhoneMsg[256]; // TCPSmartphoneMsag
@@ -91,9 +90,16 @@ int reqPhase_g = 0;
 char Debug_Info_String[36]; // Debug Info String
 Debug_Info_Ext_t Debug_Info_Ext_Message;
 
+// debug for ACK of SPaT
+extern double Time_SRM_Send, Time_SPaT_Recv;
+extern double delay;
+extern double distance_SRM_send, distance_SPaT_Recv;
+extern double distance_diff;
+
 GPSData gpsData;
 int gpsSockFd;
 char gpsAddr[] = "127.0.0.1";
+void offline_GPS_location(unsigned char change_flag);
 
 char controllerIP[32] = "192.168.0.79";
 uint16_t controllerSnmpPort = 161;
@@ -110,6 +116,12 @@ static uint64_t dropsTx = 0;
 int notxpkts = 0;
 int countTx = 0;
 int countRx = 0;
+
+// time definition
+struct timeval currentTimeTV;
+double previousTime, currentTime;
+long Delay_long_g[4]; // TRB
+double Delay_double_g[4]; // TRB
 
 /* Callback function declarations */
 void 	receiveWME_NotifIndication(WMENotificationIndication *wmeindication);
@@ -150,8 +162,8 @@ int main()
     rxmsg.wsmIndication = &rxpkt;
 
 
-    struct timeval currentTimeTV;
-    double previousTime, currentTime;
+    //struct timeval currentTimeTV;
+//    double previousTime, currentTime;
 
     // Initializations:
     {
@@ -161,7 +173,8 @@ int main()
 
         initMapMatch();
 
-        initPreemption(preempDistance2IntersectionThreshold);
+        initPreemption(preempDistance2IntersectionThreshold_Predefined);
+        //printf("predefined threshold = %d\n",preempDistance2IntersectionThreshold_Predefined);
 
         initDsrc(); // initialize the DSRC channels and invoke the drivers for sending and recieving
 
@@ -200,13 +213,14 @@ int main()
 
         /* function process*/
         if ((currentTime - previousTime) >= MIN_INTERVAL) // check if enough time is passed to broadcast new message
+       // if ((currentTime - previousTime) >= 0)
         {
             previousTime = previousTime + MIN_INTERVAL;
-            counter ++;
-            counter2 ++;
-            counter3 ++;
-            counter4 ++;
-            counter5_lab ++;
+            counter ++; //GPS reading
+            counter2 ++; //map matching callback functions
+            counter3 ++; //message generating and sending for preemption control
+            counter4 ++; //phone message generating and sending
+            counter5_lab ++; // lab loop to test SRM
 
             acceptConnection();
             //regularly to accept new connection from smartphones and close the lost connections
@@ -229,6 +243,17 @@ int main()
 
                 updateGPSCourse(&gpsData);
 
+               // if (IN_5TH_LAB)
+                {
+//                    offline_GPS_location(flag_5_to_3);
+                }
+
+//                //link 83 -- 77m
+//                gpsData.latitude = 53.522913;
+//                gpsData.longitude = -113.529441;
+//                gpsData.course = 270;
+
+
                 printf("RSE GPS Data\nTime: %.3f, GPSTime: %.1f, Lat: %.7f, Lon: %.7f\nAlt: %.1f, course: %.0f, speed, %.2f\n",
                     currentTime,
                     gpsData.actual_time,
@@ -237,6 +262,8 @@ int main()
                     gpsData.altitude,
                     gpsData.course,
                     gpsData.speed);
+
+
 
                 //buildSRMPacket();
                 //buildSPATPacket();
@@ -264,10 +291,17 @@ int main()
             {
 
                 counter2 = 0;
-                printf("Map matching ok\n");
+                //printf("Joined Map matching function\n");
 
                 float linkStartDistance;
+
+                linkID_g = 0; // remove last link  after 5 seconds
+
+                printf("Joined Map matching function, original linkID = %d\n",linkID_g);
+
                 linkID_g = mapMatch(&gpsData, &linkStartDistance);
+
+                //linkID_g = 96;
 
                 printf("MapMatch matched gps point to link %d, distance from link start %f\n",linkID_g,linkStartDistance);
 
@@ -279,10 +313,12 @@ int main()
                 else {
                     printf("Outside lab,");
                 }
-//                linkID_g = 83; //1094; // for demo purpose, the map macting is still  under constroctions.
+//                linkID_g = -1; //83; //1094; // for demo purpose, the map macting is still  under constroctions.
             }
 
-            if (counter3 >= (int)(TIMER3_SRMGE4PRE/MIN_INTERVAL)) // message generating for preemption control
+            // SRM message generating for preemption control
+            // SRM message sending for preemption control
+            if (counter3 >= (int)(TIMER3_SRMGE4PRE/MIN_INTERVAL)) // message generating and sending for preemption control
             {
                 counter3 = 0;
                 printf("Link ID: %d\n",linkID_g);
@@ -318,10 +354,17 @@ int main()
                     printf("srmActive = %d, Signal Request is activated!\n",srmActive);
                     buildSRMPacket(intersectionID, reqPhase);
                     reqPhase_g = reqPhase;
-                    printf("intersectionID=%d,reqPhase=%d,and dist2ApprInters=%f\n",
+                    printf("intersectionID=%d,reqPhase=%d,and dist2ApprInters=%f",
                             intersectionID,reqPhase,dist2ApprInters);
 
-                    printf("Sending ok \n");
+                    printf("Sending ok,  course = %.0f \n",gpsData.course);
+                    {
+                        gettimeofday(&currentTimeTV, NULL);
+                        Time_SRM_Send = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
+//                        Time_SRM_Send = currentTime
+                        distance_SRM_send = dist2ApprInters;
+                    }
+
                     //send the DSRC message
                     {
                         if( txWSMPacket(pid, &wsmreqTx) < 0){
@@ -348,27 +391,38 @@ int main()
                     reqPhase_g = reqPhase;
                     printf("intersectionID=%d,reqPhase=%d,and dist2ApprInters=%f\n",
                             intersectionID,reqPhase,dist2ApprInters);
+                    printf("GPS Course = %.0f \n",gpsData.course);
                 }
 
-                Debug_Info_Ext_Gene( &srmActive ); // generate SRM information
+                Debug_Info_Ext_Gene( &srmActive ); // generate SRM debug information
             }
 
-            if (counter4 >= (int)(TIMER4_PHONEMSG/MIN_INTERVAL)) // message generating
+            //phone message generating and sending
+            if (counter4 >= (int)(TIMER4_PHONEMSG/MIN_INTERVAL)) //phone message generating and sending
             {
                 counter4 = 0;
                 if (TCPsendSmartPhoneMsg == 1){
-                    if ( strcmp(TCPsmartPhoneMsg,TCPsmartPhoneMsg_gene) != 0 ) {
-                        printf( "2 Original Message: %s",  TCPsmartPhoneMsg_gene );
-                        // printf( "Message is NOT changed\n");
-                        printf( "3 Changed  Message: %s",  TCPsmartPhoneMsg );
+                    if ( strcmp(TCPsmartPhoneMsg,TCPsmartPhoneMsg_gene) != 0 )
+                    {
+                        if (TCPsmartPhoneMsg[0] == '\0')
+                        {
+                            sprintf(TCPsmartPhoneMsg, "%.1f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
+                                                       gpsData.speed*3.6,5,0,0,0,0,0,0,0,0,0,0,0.000000,0,0,0);
+                            printf("3 Sent     Message: %s[2DEFAULT  ]\n",TCPsmartPhoneMsg);
+                        }
+                        else
+                        {
+                            printf( "2 Original Message: %s",  TCPsmartPhoneMsg_gene );
+                            printf( "3 Changed  Message: %s",  TCPsmartPhoneMsg );
+                        }
                     }
                     else{
                         // printf( "Message is changed\n");
                         if (TCPsmartPhoneMsg[0] == '\0')
                         {
-                            sprintf(TCPsmartPhoneMsg, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
-                                                       53,3,12,0,0,0,0,0,0,0,0,0,0.000000,0,5,200);
-                            printf("3 Sent     Message: %s[DEFAULT  ]\n",TCPsmartPhoneMsg);
+                            sprintf(TCPsmartPhoneMsg, "%.1f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
+                                                       gpsData.speed*3.6,5,0,0,0,0,0,0,0,0,0,0,0.000000,0,0,0);
+                            printf("3 Sent     Message: %s[1DEFAULT  ]\n",TCPsmartPhoneMsg);
                         }
                         else
                         {
@@ -391,10 +445,11 @@ int main()
             {
                 counter5_lab = 0;
                 flag_5_to_3 = !flag_5_to_3;
-                //printf("flag_5_to_3 = %d\n",flag_5_to_3);
+//                printf("flag_5_to_3 = %d\n",flag_5_to_3);
             }
 
         }
+
 
         /* receving function part*/
         {
@@ -423,14 +478,16 @@ int main()
                     rxWSMIdentity(&rxmsg,WSMMSG_SPAT); //Identify the type of received Wave Short Message.
                     if (!rxmsg.decode_status) {
                         SPAT_t *spatRcv = (SPAT_t *)rxmsg.structure;
-                        if ((int)spatRcv->msgID.buf[0] == 13){
+                        if ((int)spatRcv->msgID.buf[0] == 13)
+                        {
                             printf("Received Signal Phase and Timing Message (SPAT), Mesage ID %d\n\v", (int)spatRcv->msgID.buf[0]);
                             //xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
 
                             //reqPhase_g = 0; // foe debug
                             processSPAT(spatRcv, &reqPhase_g);
                         }
-                        else{
+                        else
+                        {
                             printf("Received NOT SPAT, Mesage ID %d\n\v", (int)spatRcv->msgID.buf[0]);
                         }
 
@@ -468,6 +525,7 @@ int main()
         sched_yield();
         usleep(1000);
     }
+
     printf("\n Transmitted =  %d dropped = %llu\n",countTx,dropsTx);
     printf("\n Recieved =  %d\n",countRx);
 
@@ -565,7 +623,7 @@ int buildWSMRequestPacket()
     return 1;
 }
 
-int  buildWMEApplicationRequest()
+int buildWMEApplicationRequest()
 {
     wreqTx.psid = 10 ;
     printf(" WME App Req %d \n",wreqTx.psid);
@@ -658,6 +716,38 @@ int buildSRMPacket(int intersectionID, int reqPhase)
 //            srm->endOfService->second = endOfServiceSecCount; //way1, use '->' to point a member belongs to a struct pointer variable
             //srm->endOfService->second = 5; //way1, use '->' to point a member belongs to a struct pointer
             srm->endOfService->second = preemptionControlDurationTime;
+
+//            srm->endOfService->minute = (long)(currentTime); //only for TRB 2017 paper
+//            srm->endOfService->second = (long)((currentTime - (long)(currentTime))*1000000); //only for TRB 2017 paper
+//
+//            printf("#####71Sending %ld\n",srm->endOfService->minute ); //
+//            printf("#####72Sending %ld\n",srm->endOfService->second ); //
+//            printf("#####13Sending %lf\n", currentTime ); //
+//
+////            srm->endOfService->second = 5;
+//            printf("#####11Sending %ld\n",preemptionControlDurationTime ); //
+//            printf("#####12Sending %ld\n",srm->endOfService->second ); //
+
+
+
+//            double currentTime_decimal = 0;
+//            currentTime_decimal = currentTime - (long)(currentTime);
+//            long currentTime_decimal_long = 0;
+//            currentTime_decimal_long = (long)(currentTime_decimal*1000000);
+//            printf("#####21Sending %lf\n", currentTime_decimal ); //
+//            printf("#####22Sending %lf\n", currentTime_decimal*1000000 ); //
+//            printf("#####23Sending %ld\n", currentTime_decimal_long ); //
+//
+//            printf("#####41Sending %lf\n",  currentTime ); //
+//            printf("#####41Sending %lf\n",  (currentTime*1000000) ); //
+//            printf("#####41Sending %ld\n", (long)(currentTime*1000000) ); //
+//            printf("#####41Sending %ld\n", (long)((currentTime-1290721863)*1000000) ); //
+//
+//
+//            printf("#####51Sending %lf\n",  currentTime - 1290721222 ); //
+//            printf("#####51Sending %lf\n",  ((currentTime - 1290721222)*1000000) ); //
+//            printf("#####51Sending %ld\n", (long)((currentTime - 1290721222)*1000000) ); //
+//            printf("#####51Sending %ld\n", (long)((currentTime - 1290721222)*1000000) ); //
 
 ////      srm->endOfService.second
 //        struct DTime *endOfService_t; // way2, use use a pointer
@@ -947,7 +1037,7 @@ int readConfig(void) //  used for reading things from files
 int updateGPSCourse(GPSData *gpsData)
 {
     static double lastCourse = 0;
-    if ((gpsData->speed < 0.2) & (gpsData->course == 0))
+    if ((gpsData->speed < 0.1) & (gpsData->course == 0))
     {
         gpsData->course = lastCourse;
         return 1;
@@ -979,11 +1069,12 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
             int i=0,j=0,k=0;
             int interIDsize = 0, interID = 0;
             int phaseNumsize = 0, CurrentPahseNum = 0;
+            int phaseNum_ack = 0;
             SignalLightState_t *statuscurrState;
             DescriptiveName_t *statusMovementName;
             TimeMark_t statuscurrtimeToChange = 0;
 
-            SignalLightState_t *TargetPhasecurrState;
+            SignalLightState_t *TargetPhasecurrState = 0;
             TimeMark_t TargetPhasecurrtimeToChange = 0;
 
             IntersectionState_t *intersectionstate;
@@ -1037,9 +1128,14 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
                         printf("State = %ld,",*statuscurrState);
                     }
                     if(movementstate->timeToChange != NULL){
-                        statuscurrtimeToChange = (uint16_t)movementstate->timeToChange ;
-                        printf("timeToChange = %ld\n",statuscurrtimeToChange);
+                        statuscurrtimeToChange = movementstate->timeToChange ;
+//                        statuscurrtimeToChange = (uint16_t)movementstate->timeToChange ;
+//                        printf("timeToChange = %ld\n",statuscurrtimeToChange);
                     }
+                    else{
+                        statuscurrtimeToChange = 0 ;
+                    }
+                    printf("timeToChange = %ld\n",statuscurrtimeToChange);
 
                     //*preemptPhase = 2;
                     //printf("-Target phase = %d\n",*preemptPhase);
@@ -1054,18 +1150,83 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
                     else{
                         //printf("\nWarning !!! Not the target phase[%d]-_-.\n",*preemptPhase);
                     }
+
+//                    {
+//                        if( CurrentPahseNum == 5 ){
+//                            Delay_long_g[0] = movementstate->timeToChange; //t2_s
+//                            printf("####receiving t2_s %ld",Delay_long_g[0]);
+//                        }
+//
+//                        if( CurrentPahseNum == 6 ){
+//                            Delay_long_g[1] = movementstate->timeToChange; //t2_s_decimal
+//                            printf("####receiving t2_s_decimal %ld",Delay_long_g[0]);
+//                        }
+//                        if( CurrentPahseNum == 7 ){
+//                            Delay_long_g[2] = movementstate->timeToChange; ////t1_s
+//                            printf("####receiving t1_s %ld",Delay_long_g[2]);
+//                        }
+//                        if( CurrentPahseNum == 8 ){
+//                            Delay_long_g[3] = movementstate->timeToChange;  //t1_s_decimal
+//                            printf("####receiving t1_s_decimal %ld",Delay_long_g[3]);
+//                        }
+//                    }
+
+
+                    phaseNum_ack = PHASE_ACK;
+                    //printf("-Target ACK phaseNum = %d\n",phaseNum_ack);
+
+                    if( CurrentPahseNum == ((uint8_t)phaseNum_ack) )
+                    {
+                        uint16_t ACK_Status = 0;
+                        printf("--Found target ACK phaseNum = %d, Original target = %d,",CurrentPahseNum,phaseNum_ack);
+                        ACK_Status = (uint16_t)movementstate->timeToChange;
+                        printf("timeToChange = %ld\n",ACK_Status);
+//
+                        if(ACK_Status == 0x4A) // 74
+                        {
+//                            gettimeofday(&currentTimeTV, NULL); //segment errors
+//                            Time_SPaT_Recv = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
+                            Time_SPaT_Recv = currentTime;
+                            distance_SPaT_Recv = distance_calc(gpsData.latitude,gpsData.longitude,
+                                                               53.522875,-113.530539,gpsData.altitude);
+                            delay = Time_SPaT_Recv - Time_SRM_Send;
+                            distance_diff = distance_SPaT_Recv - distance_SRM_send;
+                            printf("--Dealy:%f,DisDiff:%f",delay,distance_diff);
+                        }
+
+                    }
+                    else{
+                        //printf("\nWarning !!! Not the target phase[%d]-_-.\n",*preemptPhase);
+                    }
+
                 }
             }
 
 
+//        printf("debug\n");
+//        gpsData.speed = 13.5;
         SmartphoneMsg.speed = gpsData.speed*3.6;
-        SmartphoneMsg.SenderID_1hopConnected = 5; // interID; 5 for debug
-        SmartphoneMsg.Distance_1hopConnected = dist2ApprInters;
+        SmartphoneMsg.SenderID_1hopConnected = 27; // interID; 5 for debug
+//        SmartphoneMsg.Distance_1hopConnected = dist2ApprInters;
+
+//        printf("debug2\n");
 
         //SPAT
-        SmartphoneMsg.PhaseStatus = *TargetPhasecurrState;// *statuscurrState;, 1 for debug
-        SmartphoneMsg.PhaseTiming = TargetPhasecurrtimeToChange; //statuscurrtimeToChange;
+        if( (*preemptPhase != -1) && (*preemptPhase != 0) ){
+//            printf("debug4\n");
+            SmartphoneMsg.PhaseStatus = *TargetPhasecurrState;// *statuscurrState;, 1 for debug
+//             printf("debug5\n");
+            SmartphoneMsg.PhaseTiming = TargetPhasecurrtimeToChange; //statuscurrtimeToChange;
+//            printf("debug6\n");
+            SmartphoneMsg.Distance_1hopConnected = dist2ApprInters;
+        }
+        else{
+            SmartphoneMsg.PhaseStatus = 5;// *statuscurrState;, 1 for debug
+            SmartphoneMsg.PhaseTiming = 0; //statuscurrtimeToChange;
+            SmartphoneMsg.Distance_1hopConnected = 200;
+        }
 
+//        printf("debug3\n");
 
 
 //        //Debug information sprintf
@@ -1081,7 +1242,7 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
 //                );
 //        }
 
-
+//        printf("debug2\n");
         // TCP cummunication for smartPhone's Msg of Sep. Demo
         sprintf(TCPsmartPhoneMsg, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d,%s\n",
                 SmartphoneMsg.speed,
@@ -1118,6 +1279,7 @@ int processSPAT(SPAT_t *spat, int *preemptPhase)
 
         memset(&SmartphoneMsg,0,sizeof(SmartphoneMsg));
         //reset all varibales to zeros after printf the SmartphoneMsg to TCPsmartPhoneMsg
+//        printf("debug1\n");
 
         return 0;
 }
@@ -1129,11 +1291,193 @@ void Debug_Info_Ext_Gene(int *srmStatus)
     Debug_Info_Ext_Message.link_ID_Debug = linkID_g;
     Debug_Info_Ext_Message.Distance_2RSE_Debug = dist2ApprInters;
     Debug_Info_Ext_Message.SRMStatus_Debug = *srmStatus;
+    Debug_Info_Ext_Message.SRM_delay = delay;
+    Debug_Info_Ext_Message.SRM_distance_diff = distance_diff;
+//    if (linkID_g != -1)
+//    {
+//        Debug_Info_Ext_Message.gps_course = gpsData.course;
+//    }
+
 
     //Debug information sprintf
-    sprintf(Debug_Info_String, "\n;Link=%d,%dm,SRM=%d",
+
+    sprintf(Debug_Info_String, ",Link=%d,%dm,SRM=%d,%f,%f\n",
+    //sprintf(Debug_Info_String, "\n;Link=%d,%dm,SRM=%d,%f,%f",
                                Debug_Info_Ext_Message.link_ID_Debug,
                                Debug_Info_Ext_Message.Distance_2RSE_Debug,
-                               Debug_Info_Ext_Message.SRMStatus_Debug
+                               Debug_Info_Ext_Message.SRMStatus_Debug,
+                               Debug_Info_Ext_Message.SRM_delay,
+                               Debug_Info_Ext_Message.SRM_distance_diff
+//                               Debug_Info_Ext_Message.gps_course
             );
+
+}
+
+void offline_GPS_location(unsigned char change_flag)
+{
+////    change_flag = change_flag%2;
+//
+    if (change_flag == 0) // 86<->83
+    {
+    //link 83 -- 77m
+    gpsData.latitude = 53.522913;
+    gpsData.longitude = -113.529441;
+    gpsData.course = 280;
+    }
+    else
+    {
+     //link 86 -- 77m
+    gpsData.latitude = 53.522913;
+    gpsData.longitude = -113.529441;
+    gpsData.course = 90;
+    }
+//
+    if (change_flag == 0) //86<=>83
+    {
+    //link 86 -- 21m
+    gpsData.latitude = 53.522963;
+    gpsData.longitude = -113.530453;
+    gpsData.course = 90; //[225-315]
+    }
+    else
+    {
+    //link 83 -- 10m
+    gpsData.latitude = 53.522963;
+    gpsData.longitude = -113.530453;
+    gpsData.course = 270; //[225-315]
+    }
+//
+//
+        if (change_flag == 0) //85<=>84
+    {
+    //link 85 -- 21m
+    gpsData.latitude = 53.522970;
+    gpsData.longitude = -113.530944;
+    gpsData.course = 90; //[45-135]
+
+    }
+    else
+    {
+    //link 84 -- 21m
+    gpsData.latitude = 53.522970;
+    gpsData.longitude = -113.530944;
+    gpsData.course = 270; //[45-135]
+
+    }
+//
+        if (change_flag == 0) // 88<=>87
+    {
+    //link 87 -- 30m
+    gpsData.latitude = 53.523103;
+    gpsData.longitude = -113.530656;
+    gpsData.course = 180;
+
+    }
+    else
+    {
+    //link 88 -- 30m
+    gpsData.latitude = 53.523103;
+    gpsData.longitude = -113.530656;
+    gpsData.course = 0;
+
+    }
+//
+//
+    if (change_flag == 0) // 87<=>84
+    {
+    //link 87 -- 30m
+    gpsData.latitude = 53.523103;
+    gpsData.longitude = -113.530656;
+    gpsData.course = 180;
+
+    }
+    else
+    {
+    //link 84 -- 21m
+    gpsData.latitude = 53.522970;
+    gpsData.longitude = -113.530944;
+    gpsData.course = 270; //[45-135]
+
+    }
+//
+    if (change_flag == 0) // 85<=>86
+    {
+    //link 85 -- 21m
+    gpsData.latitude = 53.522970;
+    gpsData.longitude = -113.530944;
+    gpsData.course = 90; //[45-135]
+
+    }
+    else
+    {
+     //link 86 -- 21m
+    gpsData.latitude = 53.522963;
+    gpsData.longitude = -113.530453;
+    gpsData.course = 90; //[225-315]
+    }
+//
+
+    if (change_flag == 0) // 83<=>88
+    {
+     //link 83 -- 10m
+    gpsData.latitude = 53.522963;
+    gpsData.longitude = -113.530453;
+    gpsData.course = 270; //[225-315]
+
+    }
+    else
+    {
+     //link 88 -- 30m
+    gpsData.latitude = 53.523103;
+    gpsData.longitude = -113.530656;
+    gpsData.course = 0;
+    }
+//
+    if (change_flag == 0) // 83<=>84
+    {
+     //link 83 -- 10m
+    gpsData.latitude = 53.522963;
+    gpsData.longitude = -113.530453;
+    gpsData.course = 270; //[225-315]
+
+    }
+    else
+    {
+     //link 84 -- 21m
+    gpsData.latitude = 53.522970;
+    gpsData.longitude = -113.530944;
+    gpsData.course = 270; //[45-135]
+    }
+
+    if (change_flag == 0) // -1<=>83
+    {
+     //link 83 -- 10m
+    gpsData.latitude = 53.522963;
+    gpsData.longitude = -113.530453;
+    gpsData.course = 270; //[225-315]
+
+    }
+    else
+    {
+//     //link -1 -- 21m
+//    gpsData.latitude = -5000;
+//    gpsData.longitude = -5000;
+//    gpsData.course = 0; //[45-135]
+
+    //link 83 -- 10m
+    gpsData.latitude = 53.522963;
+    gpsData.longitude = -113.530453;
+    gpsData.course = 270; //[225-315]
+    }
+
+    //link 87 -- 30m
+    gpsData.latitude = 53.523103;
+    gpsData.longitude = -113.530656;
+    gpsData.course = 180;
+
+    //link 85 -- 21m
+    gpsData.latitude = 53.522970;
+    gpsData.longitude = -113.530944;
+    gpsData.course = 90; //[45-135]
+
 }

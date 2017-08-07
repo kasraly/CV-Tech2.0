@@ -218,8 +218,10 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
     P.lon = gpsData->longitude;
 
     if (matchLinkIndex >= 0){
-        distanceBest = dist_Point_to_Link(&P, &mapLinks[matchLinkIndex], distFromStart)
-            - distHyst; //about 10 meters [in degrees] for offset
+//        distanceBest = dist_Point_to_Link(&P, &mapLinks[matchLinkIndex], distFromStart)
+//            - distHyst; //about 10 meters [in degrees] for offset
+        distanceBest = dist_Point_to_Link(&P, &mapLinks[matchLinkIndex], distFromStart); // no offsets
+
     }
     else{
         distanceBest = 1000;
@@ -233,22 +235,51 @@ int mapMatch(GPSData *gpsData, float *distFromStart)
             float distFromStartTmp;
 
             distance = dist_Point_to_Link(&P, &mapLinks[i], &distFromStartTmp);
-            if (distance < distanceBest){
+            //printf("DEBUG 201 Map matching ok,old matchLinkIndex = %d, old LinkID = %d\n",
+              //                                 matchLinkIndex,mapLinks[matchLinkIndex].id);
+            //printf("DEBUG 202 Map matching ok, new index_i = %d, new LinkID =%d\n",i,mapLinks[i].id);
+
+            //printf("DEBUG 203 Map matching ok,distance = %.9f, distanceBest =%.9f\n",distance,distanceBest);
+//            if (distance <= distanceBest){
+//            distHyst
+            if (distance < (distanceBest+distHyst)){ // use abs()
+
                 matchLinkIndex = i;
                 distanceBest = distance;
                 *distFromStart = distFromStartTmp;
+                //printf("DEBUG 301 Map matching ok,matchLinkIndex = %d\n",matchLinkIndex);
+                //printf("DEBUG 302 Map matching ok,index_i = %d, LinkID =%d\n",i,mapLinks[matchLinkIndex].id);
+            }
+            else if (distance == distanceBest){ // use abs()
+
+                matchLinkIndex = i;
+                distanceBest = distance;
+                *distFromStart = distFromStartTmp;
+                //printf("DEBUG 501 Map matching ok,matchLinkIndex = %d\n",matchLinkIndex);
+                //printf("DEBUG 502 Map matching ok,index_i = %d, LinkID =%d\n",i,mapLinks[matchLinkIndex].id);
+            }
+            else {
+                //printf("DEBUG 401 Map matching ok\n");
+                //printf("DEBUG 402 Map matching ok,distance = %.9f, distanceBest =%.9f\n",distance,distanceBest);
             }
         }
     }
 
-//    printf("DEBUG 21 Map matching ok\n");
-    printf("DEBUG matchLinkIndex = %d\n",matchLinkIndex);
-//    printf("DEBUG 22 Map matching ok\n");
 
-    return mapLinks[matchLinkIndex].id;
+    if ( matchLinkIndex == -1 )
+    {
+//      printf("DEBUG 21 Map matching ok\n");
+        printf("DEBUG matchLinkIndex = %d\n",matchLinkIndex);
+//      printf("DEBUG 22 Map matching ok\n");
+        return matchLinkIndex;
+    }
+    else
+    {
+        return mapLinks[matchLinkIndex].id;
+    }
 }
 
-// dist_Point_to_Link(): get the distance of a point to a segment
+//     dist_Point_to_Link(): get the distance of a point to a segment
 //     Input:  a Point P and a Segment S (in any dimension)
 //     Return: the shortest distance from P to S
 double dist_Point_to_Link(Point* P, struct mapLink* S, float* distFromStart)
@@ -257,17 +288,18 @@ double dist_Point_to_Link(Point* P, struct mapLink* S, float* distFromStart)
     double b = dist(P, &mapNodes[S->endNodeIndex].P);
     double c = dist(&mapNodes[S->endNodeIndex].P, &mapNodes[S->startNodeIndex].P);
 
-    double d = (c*c-b*b+a*a)/(2*c);
+    double d = (c*c-b*b+a*a)/(2*c); // consine fomular: d = a*cosb
     *distFromStart = (float)(d*M_PI/180.0*EARTH_RADIUS);
-    if (d<0)
+    if (d<0) //consine formula, angle b is dun jiao
     {
         return a;
     }
-    if (d>c)
+    if (d>c) // angle a is dun jiao
     {
         return b;
     }
-    return sqrt(a*a-d*d);
+
+    return sqrt(a*a-d*d); // return height
 }
 //===================================================================
 

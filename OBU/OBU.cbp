@@ -45,6 +45,7 @@
 		<Unit filename="OBU.c">
 			<Option compilerVar="CC" />
 		</Unit>
+		<Unit filename="OBU.h" />
 		<Unit filename="PreemptionControlOBESide.c">
 			<Option compilerVar="CC" />
 		</Unit>

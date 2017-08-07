@@ -1,9 +1,22 @@
 // typedefine for preemption control
-
 #include "OBU.h"
 #include "gpsc_probe.h"
 #define PREEMPTION_ENABLE 1
 #define PREEMPTION_DISABLE 0
+
+
+/*used for two-way handshake process*/
+#define PHASE_ACK 17 // used for mimicing ACK of SRM
+#define ACK_Value //0x4a, 74
+
+double Time_SRM_Send, Time_SPaT_Recv;
+double delay;
+double distance_SRM_send, distance_SPaT_Recv;
+double distance_diff;
+
+
+
+//double distance_calc();
 
 // preemptionRoute table
 typedef struct preemptionRouteColumn {

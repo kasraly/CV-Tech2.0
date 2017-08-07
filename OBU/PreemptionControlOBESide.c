@@ -16,14 +16,16 @@
 #define R2 40408299984087.05552164//square of constant 6356752.3142
 #define R2divR1 0.99330562
 
-int preempDistance2IntersectionThreshold;
+int preempDistance2IntersectionThreshold_Predefined = 100;
+int preemptionControlDurationTime = 5;
 
 preemptionRouteColumn_t *preemptionRouteTable;
 int preemptionRouteTableLength = 0;
+int preempDistance2IntersectionThreshold;
 
 //char broadcastSRM_enableFlag; // the enabling flag that shows whether to braodcast SRM or not
 double dist2ApproachingIntersection; // disatnce between current position to approaching intersection
-int preemptionControlDurationTime;
+
 
 int closePreemption()
 {
@@ -102,7 +104,13 @@ int preemptionStrategy(GPSData *gpsData, int linkID_g, int *intersectionID,int *
 
     if (Row_index >= preemptionRouteTableLength) //if link ID not found in table exit
     {
-        return 0; //return value 1 is to indicate no need for sending request
+        printf("Failed to find a corresponding Phase&Intersection!\n");
+
+        *intersectionID = -1;
+        *reqPhase = -1; // phase number
+        *dist2ApprInters = -1;
+//        return 0; //return value 1 is to indicate no need for sending request
+        return PREEMPTION_DISABLE ; //return value 1 is to indicate no need for sending request
     }
 
     printf("InterInfo:%d,%d,%d,%.6f,%.6f,%d,%d,\n",

@@ -205,7 +205,7 @@ void forceOffPhase(unsigned char phase)
 int signalPreempt(unsigned char preemptPhase)
 {
     static enum PreemptState preemptState = INACTIVE;
-    static unsigned char nextPhase = 0;
+    static unsigned char lastPhase = 0;
     static unsigned char desiredPhase = 0;
 
     switch(preemptState){
@@ -213,19 +213,28 @@ int signalPreempt(unsigned char preemptPhase)
             if (preemptPhase != 0)
             {
                 desiredPhase = preemptPhase;
-                nextPhase = getPhase(GET_PHASE_CURRENT);
-                if (nextPhase != desiredPhase)
-                {
-                    omitPhase(~desiredPhase);
-                    forceOffPhase(nextPhase);
-                }
+                lastPhase = getPhase(GET_PHASE_CURRENT);
+                omitPhase(~desiredPhase);
+                forceOffPhase(lastPhase & (~desiredPhase));
                 preemptState = TRANSITION;
             }
+/*            else
+            {
+                omitPhase(0x00);
+                holdPhase(0x00);
+            }*/
             break;
         case MIN_GREEN:
             break;
         case TRANSITION:
-            if (getPhase(GET_PHASE_CURRENT) == desiredPhase)
+            if ((desiredPhase != preemptPhase) & (preemptPhase != 0))
+            {
+                desiredPhase = preemptPhase;
+                omitPhase(~desiredPhase);
+                forceOffPhase(lastPhase & (~desiredPhase));
+            }// for the case when the signal request changes before ending
+
+            if (getPhase(GET_PHASE_CURRENT) & desiredPhase)
             {
                 holdPhase(desiredPhase);
                 omitPhase(0x00);
@@ -235,17 +244,26 @@ int signalPreempt(unsigned char preemptPhase)
         case ACTIVE:
             if (preemptPhase == 0)
             {
-                if (nextPhase != desiredPhase)
+                if ((lastPhase & desiredPhase) == 0)
                 {
-                    omitPhase(~nextPhase);
+                    omitPhase(~lastPhase);
                 }
                 holdPhase(0x00);
                 //forceOffPhase(desiredPhase);
                 preemptState = EXITING;
             }
+            else if (desiredPhase != preemptPhase)
+            {
+                holdPhase(0x00);
+                desiredPhase = preemptPhase;
+                omitPhase(~desiredPhase);
+                forceOffPhase(lastPhase & (~desiredPhase));
+                preemptState = TRANSITION;
+            }// for the case when the signal request changes before ending
+
             break;
         case EXITING:
-            if (getPhase(GET_PHASE_CURRENT) == nextPhase)
+            if (getPhase(GET_PHASE_CURRENT) == lastPhase)
             {
                 omitPhase(0x00);
                 preemptState = INACTIVE;
@@ -253,7 +271,7 @@ int signalPreempt(unsigned char preemptPhase)
             break;
     }
 
-    printf("\n Pre-emption: PreemptState %d, preemptPhase %x, desiredPhase %x, nextPhase %x\n",preemptState, preemptPhase, desiredPhase, nextPhase);
+    printf("\n Pre-emption: PreemptState %d, preemptPhase %x, desiredPhase %x, lastPhase %x\n",preemptState, preemptPhase, desiredPhase, lastPhase);
 
     if (preemptState == INACTIVE)
         return 0;
@@ -324,7 +342,7 @@ int initController(char *controllerIP, uint16_t controllerSnmpPort)
 
     }
 
-    phaseLength[1][0] = 40;
+/*    phaseLength[1][0] = 40;
     phaseLength[1][1] = 4;
     phaseLength[1][2] = 110 - (phaseLength[1][0] + phaseLength[1][1]);
     phaseLength[2][0] = 40;
@@ -333,7 +351,7 @@ int initController(char *controllerIP, uint16_t controllerSnmpPort)
     phaseLength[3][0] = 47;
     phaseLength[3][1] = 4;
     phaseLength[1][2] = 110 - (phaseLength[3][0] + phaseLength[3][1]);
-
+*/
 
     return 0;
 }
@@ -344,6 +362,9 @@ int closeController()
 #ifdef CONTROLLER_SNMP
     if (controllerActive == 1)
     {
+        omitPhase(0x00);
+        holdPhase(0x00);
+
         struct snmp_pdu *req, *resp;
         oid anOID[MAX_OID_LEN];
         size_t anOID_len = MAX_OID_LEN;
@@ -365,10 +386,13 @@ int closeController()
     return 0;
 }
 
-int readSPaT(SPAT_t * spat, double currentTime)
+void readSPaT(int Signalarray[][4], double currentTime)
 {
     int currentPhaseTiming[SPAT_PHASES];
     int currentPhaseStatus[SPAT_PHASES];
+
+    int PhaseStatus[SPAT_PHASES];
+    int PhaseTiming[SPAT_PHASES];
 
     struct snmp_pdu *req, *resp;
     oid anOID[MAX_OID_LEN];
@@ -461,68 +485,9 @@ int readSPaT(SPAT_t * spat, double currentTime)
             return 0;
         }
 
-        /*//spatVehMaxTimeToChange
-        req = snmp_pdu_create(SNMP_MSG_GET);
-        sprintf(oidStr,".1.3.6.1.4.1.1206.3.47.1.1.3.%d",i+1);
-        read_objid(oidStr, anOID, &anOID_len);
-        snmp_add_null_var(req, anOID, anOID_len);
-        snmp_synch_response(ss, req, &resp);
-        if(resp)
-        {
-            vars = resp->variables;
-            //printf("extracted variable %d\n",vars->type);
-            //printf("read the time remaining: %f\n",time_left);
-            snmp_free_pdu(resp);
-            printf("1.3.6.1.4.1.1206.3.47.1.1.3.%d spatVehMaxTimeToChange for phase %d: %d\n",i+1,i+1,(int)(vars->val.integer[0]));
-        }
-        else
-        {
-            printf("Error Reading the reamining time for %d phase\n", i+1);
-            return 0;
-        }
-
-        //spatOvlpMinTimeToChange
-        req = snmp_pdu_create(SNMP_MSG_GET);
-        sprintf(oidStr,".1.3.6.1.4.1.1206.3.47.2.1.2.%d",i+1);
-        read_objid(oidStr, anOID, &anOID_len);
-        snmp_add_null_var(req, anOID, anOID_len);
-        snmp_synch_response(ss, req, &resp);
-        if(resp)
-        {
-            vars = resp->variables;
-            //printf("extracted variable %d\n",vars->type);
-            //printf("read the time remaining: %f\n",time_left);
-            snmp_free_pdu(resp);
-            printf("1.3.6.1.4.1.1206.3.47.2.1.2.%d spatOvlpMinTimeToChange for phase %d: %d\n",i+1,i+1,(int)(vars->val.integer[0]));
-        }
-        else
-        {
-            printf("Error Reading the reamining time for %d phase\n", i+1);
-            return 0;
-        }
-
-        //spatOvlpMaxTimeToChange
-        req = snmp_pdu_create(SNMP_MSG_GET);
-        sprintf(oidStr,".1.3.6.1.4.1.1206.3.47.2.1.3.%d",i+1);
-        read_objid(oidStr, anOID, &anOID_len);
-        snmp_add_null_var(req, anOID, anOID_len);
-        snmp_synch_response(ss, req, &resp);
-        if(resp)
-        {
-            vars = resp->variables;
-            //printf("extracted variable %d\n",vars->type);
-            //printf("read the time remaining: %f\n",time_left);
-            snmp_free_pdu(resp);
-            printf("1.3.6.1.4.1.1206.3.47.2.1.3.%d spatOvlpMaxTimeToChange for phase %d: %d\n",i+1,i+1,(int)(vars->val.integer[0]));
-        }
-        else
-        {
-            printf("Error Reading the reamining time for %d phase\n", i+1);
-            return 0;
-        }*/
     }
 
-    //processing SPaT
+    // processing SPaT
     {
         for(i=0; i<SPAT_PHASES; i++)
         {
@@ -553,6 +518,8 @@ int readSPaT(SPAT_t * spat, double currentTime)
             else
             {
                 remainingPhaseTiming[i] -= SPaT_READ_INTERVAL;
+                remainingPhaseTiming[i] = remainingPhaseTiming[i]>0 ? remainingPhaseTiming[i] : 0;
+
                 if (allRedPhase[i] == 1)
                 {
                     if (currentPhaseTiming[i] > previousPhaseTiming[i])
@@ -564,50 +531,59 @@ int readSPaT(SPAT_t * spat, double currentTime)
 
             if (allRedPhase[i] == 1)
             {
-                //dsrcmp->PhaseTiming[i] = remainingPhaseTiming[i];
+                PhaseTiming[i] = remainingPhaseTiming[i];
             }
             else
             {
                 if ((currentPhaseTiming[i] <= 30) & (currentPhaseTiming[i] != previousPhaseTiming[i]))
                 {
-                    //dsrcmp->PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
+                    PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
                 }
                 else
                 {
                     if ((remainingPhaseTiming[i] < 3) & (remainingPhaseTiming[i]*10 < (currentPhaseTiming[i])))
                     {
-                        //dsrcmp->PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
+                        PhaseTiming[i] = ceil(currentPhaseTiming[i]/10.0);
                     }
                     else
                     {
-                        //dsrcmp->PhaseTiming[i] = remainingPhaseTiming[i];
+                        PhaseTiming[i] = remainingPhaseTiming[i];
                     }
                 }
 
             }
 
-            //dsrcmp->PhaseStatus[i] = currentPhaseStatus[i];
+            PhaseStatus[i] = currentPhaseStatus[i];
             previousPhaseTiming[i] = currentPhaseTiming[i];
-            //printf("Current Time %.2f, Phase #%d, controller timing %d, PhaseStatus %d, remainingPhaseTiming %.1f, PhaseLength %d, allRed %d\n",
-              //      currentTime, i+1, currentPhaseTiming[i], currentPhaseStatus[i], remainingPhaseTiming[i], phaseLength[i][currentPhaseStatus[i]-1], allRedPhase[i]);
+//            printf("Current Time %.2f, Phase #%d, controller timing %d, PhaseStatus %d, remainingPhaseTiming %.1f, PhaseLength %d, allRed %d\n",
+//                    currentTime, i+1, currentPhaseTiming[i], currentPhaseStatus[i], remainingPhaseTiming[i], phaseLength[i][currentPhaseStatus[i]-1], allRedPhase[i]);
         }
 
     }
 
-    printf("SPaT: \n");
+//    spat->intersections.list.array[0]->states.list.count = SPAT_PHASES;
+//    spat->intersections.list.array[0]->states.list.array = (MovementState_t **)calloc(SPAT_PHASES, sizeof(MovementState_t));
+//    printf("SPaT: \n");
+
+
     for(i=0; i<SPAT_PHASES; i++)
-    {
-/*        printf("Phase %d, State %d, Time %d, Controller Time %d, remainingTime %d\n",
+      {
+
+       Signalarray[i][0] = PhaseStatus[i];
+       Signalarray[i][1] = PhaseTiming[i];
+//        SignalMeg[i][2] = currentPhaseTiming[i];
+//        SignalMeg[i][3] = remainingPhaseTiming[i];
+
+        printf("Phase %d,\tState %d,\tTime %d,\tController Time %d,\tremainingTime %d\n",
             i+1,
-            dsrcmp->PhaseStatus[i],
-            dsrcmp->PhaseTiming[i],
+            PhaseStatus[i],
+            PhaseTiming[i],
             currentPhaseTiming[i],
-            (int)remainingPhaseTiming[i]);*/
-    }
+            (int)remainingPhaseTiming[i]);
+      }
 
-
-    return 1;
 }
+
 
 // old work trying based on RAW socket to cpature communication
 /*int readSPaT(struct Message *dsrcmp)
@@ -672,7 +648,7 @@ int readSPaT(SPAT_t * spat, double currentTime)
     return retval;
 }*/
 
-
+/*
 void parseControllerSPaTBroadcast(unsigned char *buffer, SPAT_t *spat)
 {
     int i;
@@ -698,7 +674,7 @@ void parseControllerSPaTBroadcast(unsigned char *buffer, SPAT_t *spat)
             printf(" %x",buffer[i]);
         printf("\n");
     }
-}
+}*/
 
 void PrintData (unsigned char* data, int Size)
 {

@@ -386,7 +386,7 @@ int closeController()
     return 0;
 }
 
-int readSPaT(SPAT_t* spat, double currentTime)
+void readSPaT(int Signalarray[][4], double currentTime)
 {
     int currentPhaseTiming[SPAT_PHASES];
     int currentPhaseStatus[SPAT_PHASES];
@@ -485,68 +485,9 @@ int readSPaT(SPAT_t* spat, double currentTime)
             return 0;
         }
 
-        /*//spatVehMaxTimeToChange
-        req = snmp_pdu_create(SNMP_MSG_GET);
-        sprintf(oidStr,".1.3.6.1.4.1.1206.3.47.1.1.3.%d",i+1);
-        read_objid(oidStr, anOID, &anOID_len);
-        snmp_add_null_var(req, anOID, anOID_len);
-        snmp_synch_response(ss, req, &resp);
-        if(resp)
-        {
-            vars = resp->variables;
-            //printf("extracted variable %d\n",vars->type);
-            //printf("read the time remaining: %f\n",time_left);
-            snmp_free_pdu(resp);
-            printf("1.3.6.1.4.1.1206.3.47.1.1.3.%d spatVehMaxTimeToChange for phase %d: %d\n",i+1,i+1,(int)(vars->val.integer[0]));
-        }
-        else
-        {
-            printf("Error Reading the reamining time for %d phase\n", i+1);
-            return 0;
-        }
-
-        //spatOvlpMinTimeToChange
-        req = snmp_pdu_create(SNMP_MSG_GET);
-        sprintf(oidStr,".1.3.6.1.4.1.1206.3.47.2.1.2.%d",i+1);
-        read_objid(oidStr, anOID, &anOID_len);
-        snmp_add_null_var(req, anOID, anOID_len);
-        snmp_synch_response(ss, req, &resp);
-        if(resp)
-        {
-            vars = resp->variables;
-            //printf("extracted variable %d\n",vars->type);
-            //printf("read the time remaining: %f\n",time_left);
-            snmp_free_pdu(resp);
-            printf("1.3.6.1.4.1.1206.3.47.2.1.2.%d spatOvlpMinTimeToChange for phase %d: %d\n",i+1,i+1,(int)(vars->val.integer[0]));
-        }
-        else
-        {
-            printf("Error Reading the reamining time for %d phase\n", i+1);
-            return 0;
-        }
-
-        //spatOvlpMaxTimeToChange
-        req = snmp_pdu_create(SNMP_MSG_GET);
-        sprintf(oidStr,".1.3.6.1.4.1.1206.3.47.2.1.3.%d",i+1);
-        read_objid(oidStr, anOID, &anOID_len);
-        snmp_add_null_var(req, anOID, anOID_len);
-        snmp_synch_response(ss, req, &resp);
-        if(resp)
-        {
-            vars = resp->variables;
-            //printf("extracted variable %d\n",vars->type);
-            //printf("read the time remaining: %f\n",time_left);
-            snmp_free_pdu(resp);
-            printf("1.3.6.1.4.1.1206.3.47.2.1.3.%d spatOvlpMaxTimeToChange for phase %d: %d\n",i+1,i+1,(int)(vars->val.integer[0]));
-        }
-        else
-        {
-            printf("Error Reading the reamining time for %d phase\n", i+1);
-            return 0;
-        }*/
     }
 
-    //processing SPaT
+    // processing SPaT
     {
         for(i=0; i<SPAT_PHASES; i++)
         {
@@ -620,14 +561,18 @@ int readSPaT(SPAT_t* spat, double currentTime)
 
     }
 
-    spat->intersections.list.array[0]->states.list.count = SPAT_PHASES;
-    spat->intersections.list.array[0]->states.list.array = (MovementState_t **)calloc(SPAT_PHASES, sizeof(MovementState_t));
-    printf("SPaT: \n");
+//    spat->intersections.list.array[0]->states.list.count = SPAT_PHASES;
+//    spat->intersections.list.array[0]->states.list.array = (MovementState_t **)calloc(SPAT_PHASES, sizeof(MovementState_t));
+//    printf("SPaT: \n");
+
+
     for(i=0; i<SPAT_PHASES; i++)
-    {
-        spat->intersections.list.array[0]->states.list.array[i]->timeToChange = PhaseTiming[i];
-        spat->intersections.list.array[0]->states.list.array[i]->currState = (SignalLightState_t *)malloc(sizeof(SignalLightState_t));
-        spat->intersections.list.array[0]->states.list.array[i]->currState[0] = PhaseStatus[i];
+      {
+
+       Signalarray[i][0] = PhaseStatus[i];
+       Signalarray[i][1] = PhaseTiming[i];
+//        SignalMeg[i][2] = currentPhaseTiming[i];
+//        SignalMeg[i][3] = remainingPhaseTiming[i];
 
         printf("Phase %d,\tState %d,\tTime %d,\tController Time %d,\tremainingTime %d\n",
             i+1,
@@ -635,11 +580,10 @@ int readSPaT(SPAT_t* spat, double currentTime)
             PhaseTiming[i],
             currentPhaseTiming[i],
             (int)remainingPhaseTiming[i]);
-    }
+      }
 
-
-    return 1;
 }
+
 
 // old work trying based on RAW socket to cpature communication
 /*int readSPaT(struct Message *dsrcmp)

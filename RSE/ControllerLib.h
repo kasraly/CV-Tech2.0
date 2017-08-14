@@ -16,7 +16,7 @@
 
 //struct sockaddr_in controller_addr;
 int closeController(void);
-int readSPaT(SPAT_t *spat, double currentTime);
+void readSPaT(int Signalarray[][4], double currentTime);
 void parseControllerSPaTBroadcast(unsigned char* buffer, SPAT_t *spat);
 int initController(char *controllerIP, uint16_t controllerSnmpPort);
 int signalPreempt(unsigned char phases);

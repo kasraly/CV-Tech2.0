@@ -4,6 +4,7 @@
 #include "wave.h"
 #include "asnwave.h"
 #include "SPAT.h"
+#include "MapData.h"
 #include "SignalRequestMsg.h"
 #include "ProbeDataManagement.h"
 
@@ -13,6 +14,9 @@
 
 #define CONFIG_FILE "/var/RSE_Config.txt"
 
+//golbale variable
+u_int8_t SRM_enable_g = 0;
+u_int16_t SRM_ACK_Num_g = 0;
 
 // params
 int intersectionID = 0;
@@ -37,11 +41,12 @@ int notxpkts = 0;
 int countTx = 0;
 int countRx = 0;
 
+
 /* Callback function declarations */
 void 	receiveWME_NotifIndication(WMENotificationIndication *wmeindication);
 void 	receiveWRSS_Indication(WMEWRSSRequestIndication *wrssindication);
 void 	receiveTsfTimerIndication(TSFTimer *timer);
-int	confirmBeforeJoin(WMEApplicationIndication *); /* Callback function to join with the Tx application */
+int	    confirmBeforeJoin(WMEApplicationIndication *); /* Callback function to join with the Tx application */
 
 /* Function Declarations */
 int buildPSTEntry();
@@ -58,6 +63,12 @@ void closeAll(void);
 void initDsrc();
 int readConfig(void);
 
+long Rsemin,Rsesec,Obemin,Obesec;
+
+struct timeval currentTimeTV;
+double previousTime, currentTime;
+
+
 int processSRM(SignalRequestMsg_t *srm, unsigned char *preemptPhase, float *preemptPhaseTime);
 
 int main()
@@ -65,13 +76,13 @@ int main()
     printf("Start \n");
 
     int rx_ret = 0;
-    WSMMessage rxmsg;
+	WSMMessage rxmsg;
     WSMIndication rxpkt;
     rxmsg.wsmIndication = &rxpkt;
 
 
-    struct timeval currentTimeTV;
-    double previousTime, currentTime;
+//    struct timeval currentTimeTV;
+//    double previousTime, currentTime;
 
     // Initializations:
     {
@@ -105,6 +116,7 @@ int main()
         static int counter = 0;
         static int spatCounter = 0;
         static int preemptCounter = 0;
+
         gettimeofday(&currentTimeTV, NULL);
         currentTime = (double)currentTimeTV.tv_sec + (double)currentTimeTV.tv_usec/1000000;
         if ((currentTime - previousTime) >= MIN_INTERVAL) // check if enough time is passed to broadcast new message
@@ -136,7 +148,7 @@ int main()
 
                 printf("SPaT routine ...\n");
                 buildSPATPacket(currentTime);
-
+                //buildMAPPacket();
                 //send the DSRC message
                 if( txWSMPacket(pid, &wsmreqTx) < 0)
                 {
@@ -148,6 +160,12 @@ int main()
                     countTx++;
                 }
 
+				// finished SPaT transmission
+				if (SRM_enable_g == 1)
+				{
+					SRM_enable_g =0;
+					SRM_ACK_Num_g = 0;
+				}
 
                 if((notxpkts != 0) && (countTx >= notxpkts))
                     break;
@@ -178,8 +196,6 @@ int main()
                     gpsData.altitude,
                     gpsData.course,
                     gpsData.speed);
-
-
                 //buildSRMPacket();
             }
         }
@@ -195,6 +211,7 @@ int main()
                 xml_print(rxmsg); /* call the parsing function to extract the contents of the received message */
 
                 processSRM(srmRcv, &preemptPhase, &preemptPhaseTime);
+                printf("Test for the preemptPhase = 0x%02x, preemptPhaseTime = %f\n", preemptPhase,preemptPhaseTime);
             }
         }
 
@@ -296,32 +313,318 @@ int buildWSMRequestPacket()
 
 int buildSPATPacket(double currentTime)
 {
+    int Sstate, Stime;
+    char Intersection1_name[] = "Intersection1";
+    char movementstate1_name[] = "EastToWestStraight";
+    char movementstate2_name[] = "EastToWestLeft";
+    char movementstate3_name[] = "WestToEastStraight";
+    char movementstate4_name[] = "WestToEastLeft";
+    char movementstate5_name[] = "NorthToSouthStraight";
+    char movementstate6_name[] = "NorthToSouthLeft";
+    char movementstate7_name[] = "SouthToNorthStraight";
+    char movementstate8_name[] = "SouthToNorthLeft";
+
+    int SignalMeg[8][4];
+    int i;
+
+    Rsemin = (long) currentTime;
+    Rsesec = (long) ((currentTime-Rsemin)*1000000);
+
+//    delaymin = Rsemin - Obemin;
+//    delaysec = Rsesec - Obesec;
+
     printf("Initializing SPaT Packet\n");
     static int spatCount = 0;
     asn_enc_rval_t rvalenc;
     SPAT_t *spat;
+	IntersectionState_t *intersectionstate1;
+    MovementState_t *movementstate1, *movementstate2, *movementstate3, *movementstate4, *movementstate5, *movementstate6, *movementstate7, *movementstate8;
+
     /* SRM related information */
+
     spat = (SPAT_t *) calloc(1,sizeof(SPAT_t));
     spat->msgID.buf = (uint8_t *) calloc(1, sizeof(uint8_t)); /* allocate memory for buffer which is used to store,
                                                               * what type of message it is
                                                               */
     spat->msgID.size = sizeof(uint8_t);
     spat->msgID.buf[0] = DSRCmsgID_signalPhaseAndTimingMessage;
-    spatCount++;
+    // spatCount++;
 
-    printf("populating number of intersection\n");
-    spat->intersections.list.count = 1;
-    printf("Allocating memory for intersection\n");
-    spat->intersections.list.array = (IntersectionState_t **)calloc(1,sizeof(IntersectionState_t));
-    spat->intersections.list.size = sizeof(IntersectionState_t);
-    printf("Allocating memory for intersection ID\n");
-    spat->intersections.list.array[0]->id.buf = (uint8_t *)calloc(1, sizeof(uint8_t));
-    printf("writing the id buffer size value\n");
-    spat->intersections.list.array[0]->id.size = sizeof(uint8_t) * 1;
-    printf("writing intersection ID\n");
-    spat->intersections.list.array[0]->id.buf[0] = intersectionID;
-    printf("reading SPaT from Controller\n");
-    readSPaT(spat, currentTime);
+    intersectionstate1 = (IntersectionState_t *) calloc(1, sizeof(IntersectionState_t));
+    intersectionstate1->name = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    intersectionstate1->name->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    intersectionstate1->name->size = sizeof(Intersection1_name);
+
+    for(i=0;i<sizeof(Intersection1_name);i++)
+    {
+        intersectionstate1->name->buf[i] = Intersection1_name[i];
+    }
+
+    intersectionstate1->id.buf = (uint8_t *) calloc(4, sizeof(uint8_t));
+    intersectionstate1->id.size = 4;
+    intersectionstate1->id.buf[0] = 0x00;
+    intersectionstate1->id.buf[1] = 0x00;
+    intersectionstate1->id.buf[2] = 0x00;
+    intersectionstate1->id.buf[3] = 0x64;
+
+    intersectionstate1->status.buf = (uint8_t *) calloc(1, sizeof(uint8_t));
+    intersectionstate1->status.size = sizeof(uint8_t);
+    intersectionstate1->status.buf[0] = 0;
+    intersectionstate1->timeStamp = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(intersectionstate1->timeStamp) = 0x4EBAF6B5;
+
+    readSPaT(SignalMeg,currentTime);
+
+//  movementstate1 defined as "EastToWestStraight"
+    movementstate1 = (MovementState_t *) calloc(1, sizeof(MovementState_t));
+    movementstate1->movementName = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    movementstate1->movementName->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+//    movementstate1->movementName->size = sizeof(movementstate1_name);
+//    for(i=0;i<sizeof(movementstate1_name);i++)
+//    {
+//      movementstate1->movementName->buf[i] = movementstate1_name[i];
+//    }
+    movementstate1->movementName->size = 1;
+    movementstate1->movementName->buf[0] = 0x01;
+
+    movementstate1->laneCnt=(uint8_t *) calloc(1, sizeof(uint8_t));
+
+    movementstate1->laneSet.buf = (uint8_t *) calloc(2, sizeof(uint8_t));
+    movementstate1->laneSet.size = 1;
+    movementstate1->laneSet.buf[0] = 0x01;
+
+    movementstate1->pedState= (PedestrianSignalState_t *) calloc(1, sizeof(uint8_t ));
+
+    movementstate1->currState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate1->currState[0] = SignalMeg[0][0];
+    movementstate1->timeToChange = SignalMeg[0][1];
+    movementstate1->yellState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate1->yellState[0] = 0x03;
+    movementstate1->yellTimeToChange = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(movementstate1->yellTimeToChange) = 0x04;
+
+//  movementstate2 defined as "EastToWestLeft"
+    movementstate2 = (MovementState_t *) calloc(1, sizeof(MovementState_t));
+    movementstate2->movementName = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    movementstate2->movementName->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+//    movementstate2->movementName->size = sizeof(movementstate2_name);
+//    for(i=0;i<sizeof(movementstate2_name);i++)
+//    {
+//      movementstate2->movementName->buf[i] = movementstate2_name[i];
+//    }
+
+    movementstate2->movementName->size = 1;
+    movementstate2->movementName->buf[0] = 0x02;
+
+    movementstate2->laneCnt=(uint8_t *) calloc(1, sizeof(uint8_t));
+
+    movementstate2->laneSet.buf = (uint8_t *) calloc(2, sizeof(uint8_t));
+    movementstate2->laneSet.size = 1;
+    movementstate2->laneSet.buf[0] = 0x01;
+
+    movementstate2->pedState= (PedestrianSignalState_t *) calloc(1, sizeof(uint8_t ));
+
+    movementstate2->currState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate2->currState[0] = SignalMeg[1][0];
+    movementstate2->timeToChange = SignalMeg[1][1];
+    movementstate2->yellState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate2->yellState[0] = 0x03;
+    movementstate2->yellTimeToChange = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(movementstate2->yellTimeToChange) = 0x04;
+
+//  movementstate3 defined as "WestToEastStraight"
+    movementstate3 = (MovementState_t *) calloc(1, sizeof(MovementState_t));
+    movementstate3->movementName = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    movementstate3->movementName->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+//    movementstate3->movementName->size = sizeof(movementstate3_name);
+//    for(i=0;i<sizeof(movementstate3_name);i++)
+//    {
+//      movementstate3->movementName->buf[i] = movementstate3_name[i];
+//    }
+    movementstate3->movementName->size = 1;
+    movementstate3->movementName->buf[0] = 0x03;
+
+    movementstate3->laneCnt=(uint8_t *) calloc(1, sizeof(uint8_t));
+
+    movementstate3->laneSet.buf = (uint8_t *) calloc(2, sizeof(uint8_t));
+    movementstate3->laneSet.size = 1;
+    movementstate3->laneSet.buf[0] = 0x01;
+
+    movementstate3->pedState= (PedestrianSignalState_t *) calloc(1, sizeof(uint8_t ));
+
+    movementstate3->currState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate3->currState[0] = SignalMeg[2][0];
+    movementstate3->timeToChange = SignalMeg[2][1];
+    movementstate3->yellState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate3->yellState[0] = 0x03;
+    movementstate3->yellTimeToChange = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(movementstate3->yellTimeToChange) = 0x04;
+
+//  movementstate4 defined as "WestToEastLeft"
+    movementstate4 = (MovementState_t *) calloc(1, sizeof(MovementState_t));
+    movementstate4->movementName = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    movementstate4->movementName->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+//    movementstate4->movementName->size = sizeof(movementstate4_name);
+//    for(i=0;i<sizeof(movementstate4_name);i++)
+//    {
+//      movementstate4->movementName->buf[i] = movementstate4_name[i];
+//    }
+    movementstate4->movementName->size = 1;
+    movementstate4->movementName->buf[0] = 0x04;
+
+    movementstate4->laneCnt=(uint8_t *) calloc(1, sizeof(uint8_t));
+
+    movementstate4->laneSet.buf = (uint8_t *) calloc(2, sizeof(uint8_t));
+    movementstate4->laneSet.size = 1;
+    movementstate4->laneSet.buf[0] = 0x01;
+
+    movementstate4->pedState= (PedestrianSignalState_t *) calloc(1, sizeof(uint8_t ));
+
+    movementstate4->currState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate4->currState[0] = SignalMeg[3][0];
+    movementstate4->timeToChange = SignalMeg[3][1];
+    movementstate4->yellState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate4->yellState[0] = 0x03;
+    movementstate4->yellTimeToChange = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(movementstate4->yellTimeToChange) = 0x04;
+
+//  movementstate5 defined as "NorthToSouthStraight"
+    movementstate5 = (MovementState_t *) calloc(1, sizeof(MovementState_t));
+    movementstate5->movementName = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    movementstate5->movementName->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+//    movementstate5->movementName->size = sizeof(movementstate5_name);
+//    for(i=0;i<sizeof(movementstate5_name);i++)
+//    {
+//      movementstate5->movementName->buf[i] = movementstate5_name[i];
+//    }
+    movementstate5->movementName->size = 1;
+    movementstate5->movementName->buf[0] = 0x05;
+
+    movementstate5->laneCnt=(uint8_t *) calloc(1, sizeof(uint8_t));
+
+    movementstate5->laneSet.buf = (uint8_t *) calloc(2, sizeof(uint8_t));
+    movementstate5->laneSet.size = 1;
+    movementstate5->laneSet.buf[0] = 0x01;
+
+    movementstate5->pedState= (PedestrianSignalState_t *) calloc(1, sizeof(uint8_t ));
+
+    movementstate5->currState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate5->currState[0] = SignalMeg[4][0];
+    movementstate5->timeToChange = SignalMeg[4][1];
+    //movementstate5->timeToChange = Rsemin;
+    movementstate5->yellState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate5->yellState[0] = 0x03;
+    movementstate5->yellTimeToChange = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(movementstate5->yellTimeToChange) = 0x04;
+
+//  movementstate6 defined as "NorthToSouthLeft"
+    movementstate6 = (MovementState_t *) calloc(1, sizeof(MovementState_t));
+    movementstate6->movementName = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    movementstate6->movementName->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+//    movementstate6->movementName->size = sizeof(movementstate6_name);
+//    for(i=0;i<sizeof(movementstate6_name);i++)
+//    {
+//      movementstate6->movementName->buf[i] = movementstate6_name[i];
+//    }
+    movementstate6->movementName->size = 1;
+    movementstate6->movementName->buf[0] = 0x06;
+
+    movementstate6->laneCnt=(uint8_t *) calloc(1, sizeof(uint8_t));
+
+    movementstate6->laneSet.buf = (uint8_t *) calloc(2, sizeof(uint8_t));
+    movementstate6->laneSet.size = 1;
+    movementstate6->laneSet.buf[0] = 0x01;
+
+    movementstate6->pedState= (PedestrianSignalState_t *) calloc(1, sizeof(uint8_t ));
+
+    movementstate6->currState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate6->currState[0] = SignalMeg[5][0];
+    movementstate6->timeToChange = SignalMeg[5][1];
+    //movementstate6->timeToChange = Rsesec;
+    movementstate6->yellState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate6->yellState[0] = 0x03;
+    movementstate6->yellTimeToChange = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(movementstate6->yellTimeToChange) = 0x04;
+
+//  movementstate7 defined as "SouthToNorthStraight"
+    movementstate7 = (MovementState_t *) calloc(1, sizeof(MovementState_t));
+    movementstate7->movementName = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    movementstate7->movementName->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+//    movementstate7->movementName->size = sizeof(movementstate7_name);
+//    for(i=0;i<sizeof(movementstate7_name);i++)
+//    {
+//      movementstate7->movementName->buf[i] = movementstate7_name[i];
+//    }
+    movementstate7->movementName->size = 1;
+    movementstate7->movementName->buf[0] = 0x07;
+
+    movementstate7->laneCnt=(uint8_t *) calloc(1, sizeof(uint8_t));
+
+    movementstate7->laneSet.buf = (uint8_t *) calloc(2, sizeof(uint8_t));
+    movementstate7->laneSet.size = 1;
+    movementstate7->laneSet.buf[0] = 0x01;
+
+    movementstate7->pedState= (PedestrianSignalState_t *) calloc(1, sizeof(uint8_t ));
+
+    movementstate7->currState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate7->currState[0] = SignalMeg[6][0];
+    movementstate7->timeToChange = SignalMeg[6][1];
+
+//   if(SRM_enable_g == 1)
+//	{
+//		movementstate7->timeToChange = SRM_ACK_Num_g;
+//	}
+//	else
+//	{
+//		movementstate7->timeToChange = 0x00;
+//	}
+
+    //movementstate7->timeToChange = Obemin;
+    movementstate7->yellState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate7->yellState[0] = 0x03;
+    movementstate7->yellTimeToChange = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(movementstate7->yellTimeToChange) = 0x04;
+
+
+//  movementstate8 defined as "SouthToNorthLeft"
+    movementstate8 = (MovementState_t *) calloc(1, sizeof(MovementState_t));
+    movementstate8->movementName = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+    movementstate8->movementName->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+//    movementstate8->movementName->size = sizeof(movementstate8_name);
+//    for(i=0;i<sizeof(movementstate8_name);i++)
+//    {
+//      movementstate8->movementName->buf[i] = movementstate8_name[i];
+//    }
+    movementstate8->movementName->size = 1;
+    movementstate8->movementName->buf[0] = 0x08;
+
+    movementstate8->laneCnt=(uint8_t *) calloc(1, sizeof(uint8_t));
+
+    movementstate8->laneSet.buf = (uint8_t *) calloc(2, sizeof(uint8_t));
+    movementstate8->laneSet.size = 1;
+    movementstate8->laneSet.buf[0] = 0x01;
+
+    movementstate8->pedState= (PedestrianSignalState_t *) calloc(1, sizeof(uint8_t ));
+
+    movementstate8->currState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate8->currState[0] = SignalMeg[7][0];
+    movementstate8->timeToChange = SignalMeg[7][1];
+    //movementstate8->timeToChange = Obesec;
+    movementstate8->yellState = (SignalLightState_t *) calloc(1, sizeof(SignalLightState_t ));
+    movementstate8->yellState[0] = 0x03;
+    movementstate8->yellTimeToChange = (TimeMark_t *)calloc(1, sizeof(uint32_t));
+    *(movementstate8->yellTimeToChange) = 0x04;
+
+    ASN_SEQUENCE_ADD(&intersectionstate1->states.list,movementstate1);
+    ASN_SEQUENCE_ADD(&intersectionstate1->states.list,movementstate2);
+    ASN_SEQUENCE_ADD(&intersectionstate1->states.list,movementstate3);
+    ASN_SEQUENCE_ADD(&intersectionstate1->states.list,movementstate4);
+    ASN_SEQUENCE_ADD(&intersectionstate1->states.list,movementstate5);
+    ASN_SEQUENCE_ADD(&intersectionstate1->states.list,movementstate6);
+    ASN_SEQUENCE_ADD(&intersectionstate1->states.list,movementstate7);
+    ASN_SEQUENCE_ADD(&intersectionstate1->states.list,movementstate8);
+
+    ASN_SEQUENCE_ADD(&spat->intersections.list, intersectionstate1);
 
     rvalenc = der_encode_to_buffer(&asn_DEF_SPAT, spat, &wsmreqTx.data.contents, 1000); /* Encode your SRM in to WSM Packets */
     if (rvalenc.encoded == -1) {
@@ -334,6 +637,95 @@ int buildSPATPacket(double currentTime)
     }
 
     return 1;
+}
+
+ int buildMAPPacket()
+ {
+
+	    asn_enc_rval_t rvalenc;
+        MapData_t *map;
+        static int msgcount;
+        int i;
+
+        Intersection_t *intersection;
+        ApproachObject_t *Approach1;
+        char Intersection1_name[] = "Intersection1";
+        char Approach_name[] = "westbound";
+
+        map = (MapData_t *) calloc(1,sizeof(MapData_t));
+        map->msgID.buf = (uint8_t *) calloc(1, sizeof(uint8_t));
+        map->msgID.size = sizeof(uint8_t);
+        map->msgID.buf[0] = DSRCmsgID_mapData;
+
+        map->msgCnt = msgcount%127;
+        msgcount++;
+
+        map->name =(DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+        map->name->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+        map->name->size = sizeof(Intersection1_name);
+        for(i=0;i<sizeof(Intersection1_name);i++)
+        map->name->buf[i] = Intersection1_name[i];
+
+        map->layerType = (uint8_t *) calloc(1,sizeof(uint8_t));
+        map->layerType->buf = (uint8_t *) calloc(1, sizeof(uint8_t));
+        map->layerType->size = sizeof(uint8_t);
+        map->layerType->buf[0] = LayerType_generalMapData;
+
+
+        intersection = (Intersection_t *) calloc(1,sizeof(Intersection_t));
+        intersection->id.buf=(IntersectionID_t *)calloc(1,sizeof(IntersectionID_t));
+        intersection->id.size=sizeof(IntersectionID_t);
+        intersection->id.buf[0]=0x06;
+
+        intersection->refPoint= (Position3D_t *) calloc(1,sizeof(Position3D_t));
+        intersection->refPoint->Long=0x0001;
+        intersection->refPoint->lat=0x001;
+
+
+        //Approach_drivingLanes *drivingLanes;
+//        Approach1->approach->drivingLanes = (Approach__drivingLanes *) calloc(1,sizeof(Approach__drivingLanes));
+        // implementation of ApproachObject_t
+        Approach1 = (ApproachObject_t *) calloc(1,sizeof(ApproachObject_t));
+        Approach1->approach->name = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+        Approach1->approach->name->buf = (DescriptiveName_t *) calloc(1,sizeof(DescriptiveName_t));
+        Approach1->approach->name->size = sizeof(Approach_name);
+        for(i=0;i<sizeof(Approach_name);i++)
+        Approach1->approach->name->buf[i] = Approach_name[i];
+
+        Approach1->approach->id = (ApproachNumber_t *) calloc(1,sizeof(ApproachNumber_t));
+        Approach1->approach->id = 1;
+
+
+        VehicleReferenceLane_t *lanes;
+        lanes = (VehicleReferenceLane_t *) calloc(1,sizeof(VehicleReferenceLane_t));
+
+        lanes->laneNumber.buf = (LaneNumber_t *) calloc(1,sizeof(LaneNumber_t));
+        lanes->laneNumber.size = 1;
+        lanes->laneNumber.buf[0] = 1;
+
+        lanes->laneWidth = (LaneWidth_t *) calloc(1,sizeof(LaneWidth_t));
+        lanes->laneWidth = 3;
+
+
+        /***************************** implementation of node list here ***************************************/
+
+        /******************************************************************************************************/
+//        ASN_SEQUENCE_ADD(&Approach1->approach->drivingLanes.list,lanes);
+        ASN_SEQUENCE_ADD(&intersection->approaches.list,Approach1);
+        ASN_SEQUENCE_ADD(&map->intersections->list,intersection);
+
+        rvalenc = der_encode_to_buffer(&asn_DEF_MapData, map, &wsmreqTx.data.contents, 1000);
+
+        if (rvalenc.encoded == -1) {
+                fprintf(stderr, "Cannot encode %s: %s\n",
+                rvalenc.failed_type->name, strerror(errno));
+        } else  {
+                printf("Structure successfully encoded %d\n", rvalenc.encoded);
+                wsmreqTx.data.length = rvalenc.encoded;
+                asn_DEF_MapData.free_struct (&asn_DEF_MapData, map, 0);
+        }
+
+	    return 1;
 }
 
  /* Main use of this function is we will encapsulate the SRM related info in to WSM request packet */
@@ -465,6 +857,10 @@ int confirmBeforeJoin(WMEApplicationIndication *appind)
 int processSRM(SignalRequestMsg_t *srm, unsigned char *preemptPhase, float *preemptPhaseTime)
 {
     static int vehicleID = 0;
+
+	SRM_enable_g = 1;
+	SRM_ACK_Num_g = 0x4A;
+
     if (srm->request.id.buf[0] == intersectionID)
     {
         if (*preemptPhaseTime <= 0)
@@ -472,6 +868,14 @@ int processSRM(SignalRequestMsg_t *srm, unsigned char *preemptPhase, float *pree
             vehicleID = srm->vehicleVIN->id->buf[0];
             *preemptPhase = 0x01<<(srm->request.requestedAction->buf[0]-1);
             *preemptPhaseTime = srm->endOfService->second;
+
+
+             Obemin = srm->endOfService->minute;
+             Obesec = srm->endOfService->second;
+
+             Obemin = (long) currentTime - Obemin;
+             Obesec = (long) ((currentTime-Rsemin)*1000000) - Obesec;
+
             return 1;
         }
         else
@@ -557,4 +961,3 @@ int readConfig(void)
     fclose(configFile);
     return 0;
 }
-
